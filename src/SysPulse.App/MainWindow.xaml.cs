@@ -45,6 +45,7 @@ public partial class MainWindow : Window
     private List<(int num, string label)> _diskOrder = new();
 
     private System.Windows.Forms.NotifyIcon? _tray;
+    private EventWaitHandle? _showEvent;
     private bool _reallyExit;
 
     public MainWindow()
@@ -78,6 +79,7 @@ public partial class MainWindow : Window
         {
             _stop = true;
             _tray?.Dispose();
+            _showEvent?.Dispose();
             _monitor.Dispose();
         };
     }
@@ -102,6 +104,11 @@ public partial class MainWindow : Window
             ContextMenuStrip = menu,
         };
         _tray.DoubleClick += (_, _) => RestoreFromTray();
+
+        // 2 個目のインスタンスからの復帰信号を受け取る(多重起動禁止の受け側)
+        _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, App.ShowEventName);
+        ThreadPool.RegisterWaitForSingleObject(_showEvent,
+            (_, _) => Dispatcher.BeginInvoke(RestoreFromTray), null, -1, false);
     }
 
     private void HideToTray()
