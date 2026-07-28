@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 
 namespace SysPulse.App.Controls;
 
@@ -62,6 +63,15 @@ public sealed class DiskRow : Grid
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
         };
+        // 背景のグラフに紛れないよう、文字に黒いハロー(全方位シャドウ)を付ける
+        var halo = new DropShadowEffect
+        {
+            Color = Colors.Black,
+            BlurRadius = 3,
+            ShadowDepth = 0,
+            Opacity = 1.0,
+            RenderingBias = RenderingBias.Quality,
+        };
         _pct = new TextBlock
         {
             Text = "—",
@@ -69,6 +79,7 @@ public sealed class DiskRow : Grid
             FontSize = 12,
             FontWeight = FontWeights.Bold,
             TextAlignment = TextAlignment.Center,
+            Effect = halo,
         };
         overlay.Children.Add(_pct);
         _rate = new TextBlock
@@ -76,6 +87,7 @@ public sealed class DiskRow : Grid
             Foreground = DimBrush,
             FontSize = 9.5,
             TextAlignment = TextAlignment.Center,
+            Effect = halo,
         };
         overlay.Children.Add(_rate);
         right.Children.Add(overlay);
