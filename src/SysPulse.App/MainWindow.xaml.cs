@@ -366,18 +366,42 @@ public partial class MainWindow : Window
         if (_rows.TryGetValue("net", out var net))
             net.SetDevice(info.Net);
 
-        BuildDiskRows(info.Disks);
+        BuildDiskRows(info.Disks, info.DiskLetters, info.DiskSpaces);
     }
 
     /// <summary>
     /// ディスク行の構築(最大 10 台)。左下ブロックを 2 列 x 5 行で使い、
     /// 左・右・左・右の順に詰める(セルは背景スパークライン付きの 2 行表示)。
     /// config に固定割り当てがあればそれを先頭に使い、残りは Online ディスクを
-    /// 番号順に自動追加。抜き差し(増減)があれば行を作り直す。
-    /// 固定割り当てがなければ Online ディスクを番号順に最大 10 台自動検出。
+    /// ドライブレター順に自動追加。抜き差し(増減)があれば行を作り直す。
+    /// 固定割り当てがなければ Online ディスクをドライブレター順に最大 10 台自動検出。
+    /// 自動追加分の表示名はドライブレター+ボリュームラベル("C:システム"、
+    /// 複数パーティションは "C:システム F:データ")。2 行目に空き/総量+空き率
+    /// ("833/930GB 90%")を併記し、セルから溢れた分はクリップして隠す。
+    /// レターが取れないディスクだけ従来の「ディスク N」表記にフォールバック。
     /// </summary>
-    private void BuildDiskRows(Dictionary<int, string> models)
+    private void BuildDiskRows(Dictionary<int, string> models, IReadOnlyDictionary<int, string> letters,
+        IReadOnlyDictionary<int, DiskSpaceInfo> spaces)
     {
+        // 表示名は "C:システム"(ドライブレター+ボリュームラベル)。
+        // 複数パーティションは "C:システム F:データ" のようにレター毎に並べる。
+        // ラベルが無ければ "C:" のみ。レター自体が取れなければ「ディスク N」。
+        string AutoLabel(int n)
+        {
+            if (!letters.TryGetValue(n, out string? l) || l.Length == 0)
+                return $"ディスク {n}";
+            spaces.TryGetValue(n, out var sp);
+            return string.Join(" ", l.Split(':', StringSplitOptions.RemoveEmptyEntries)
+                .Select(c => sp != null && sp.VolumeLabels.TryGetValue(c, out string? v) && v.Length > 0
+                    ? $"{c}:{v}"
+                    : $"{c}:"));
+        }
+
+        // 並びはドライブレター順(複合 "C:F:" は先頭レター C を基準)。
+        // レターが取れないディスクは後ろに回し、従来どおり番号順。
+        int LetterKey(int n) =>
+            letters.TryGetValue(n, out string? l) && l.Length > 0 ? l[0] : 0x100 + n;
+
         var desired = new List<(int num, string label)>();
         var fixedDisks = _config.Disks;
         if (fixedDisks.Count > 0)
@@ -386,25 +410,29 @@ public partial class MainWindow : Window
             foreach (var e in fixedDisks.Take(MaxDisks))
                 desired.Add((e.Number, e.Label));
             // 固定以外の Online ディスクを空き枠へ自動追加(切断されれば消える)
-            foreach (int n in models.Keys.Where(n => !fixedNums.Contains(n)).OrderBy(n => n))
+            foreach (int n in models.Keys.Where(n => !fixedNums.Contains(n)).OrderBy(LetterKey))
             {
                 if (desired.Count >= MaxDisks)
                     break;
-                desired.Add((n, $"ディスク {n}"));
+                desired.Add((n, AutoLabel(n)));
             }
         }
         else
         {
-            foreach (int n in models.Keys.OrderBy(n => n).Take(MaxDisks))
-                desired.Add((n, $"ディスク {n}"));
+            foreach (int n in models.Keys.OrderBy(LetterKey).Take(MaxDisks))
+                desired.Add((n, AutoLabel(n)));
         }
 
-        // 構成が変わっていなければモデル名の更新だけ
-        if (_disksBuilt && _diskOrder.Select(d => d.num).SequenceEqual(desired.Select(d => d.num)))
+        // 構成(台数・表示名)が変わっていなければモデル名と空き容量の更新だけ
+        if (_disksBuilt && _diskOrder.SequenceEqual(desired))
         {
             foreach (var (num, _) in desired)
-                if (_diskRows.TryGetValue(num, out var row) && models.TryGetValue(num, out string? model) && model.Length > 0)
-                    row.SetDevice(model);
+                if (_diskRows.TryGetValue(num, out var row))
+                {
+                    if (models.TryGetValue(num, out string? model) && model.Length > 0)
+                        row.SetDevice(model);
+                    row.SetSpace(FmtSpace(spaces, num));
+                }
             return;
         }
 
@@ -427,17 +455,28 @@ public partial class MainWindow : Window
         for (int i = 0; i < desired.Count; i++)
         {
             var (num, label) = desired[i];
-            AddDiskRow(_bl, i / 2, i % 2, num, label, models.GetValueOrDefault(num, ""));
+            var row = AddDiskRow(_bl, i / 2, i % 2, num, label, models.GetValueOrDefault(num, ""));
+            row.SetSpace(FmtSpace(spaces, num));
         }
     }
 
-    private void AddDiskRow(Grid block, int rowIndex, int column, int number, string label, string model)
+    /// <summary>容量の表示("833/930GB 90%" = 空き/総量+空き率)。取れないときは空文字。</summary>
+    private static string FmtSpace(IReadOnlyDictionary<int, DiskSpaceInfo> spaces, int num)
+    {
+        if (!spaces.TryGetValue(num, out var s) || s.TotalGb <= 0)
+            return "";
+        double pct = s.FreeGb / s.TotalGb * 100.0;
+        return $"{s.FreeGb:F0}/{s.TotalGb:F0}GB {pct:F0}%";
+    }
+
+    private DiskRow AddDiskRow(Grid block, int rowIndex, int column, int number, string label, string model)
     {
         var row = new DiskRow(label, CDisk, model);
         Grid.SetRow(row, rowIndex);
         Grid.SetColumn(row, column);
         block.Children.Add(row);
         _diskRows[number] = row;
+        return row;
     }
 
     // ---- ドラッグ/リサイズ検出 ----

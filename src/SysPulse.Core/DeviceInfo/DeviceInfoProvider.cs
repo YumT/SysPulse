@@ -1,4 +1,5 @@
 using System.Management;
+using System.Text.RegularExpressions;
 using SysPulse.Core.Models;
 
 namespace SysPulse.Core.Devices;
@@ -86,6 +87,163 @@ public static class DeviceInfoProvider
             result[(int)number] = name;
         }
         return result;
+    }
+
+    /// <summary>
+    /// 物理ディスク番号 → ドライブレター("C:"、複数パーティションは "C:D:")の対応を返す。
+    /// レターが 1 つも無いディスクは含めない。
+    /// 主経路は MSFT_Partition(Storage プロバイダ)、失敗時は
+    /// Win32_LogicalDiskToPartition にフォールバック。
+    /// </summary>
+    public static Dictionary<int, string> GetDiskLetters()
+    {
+        try
+        {
+            var result = GetDiskLettersViaMsftPartition();
+            if (result.Count > 0)
+                return result;
+        }
+        catch
+        {
+            // フォールバックへ
+        }
+        return GetDiskLettersViaWin32();
+    }
+
+    private static Dictionary<int, string> GetDiskLettersViaMsftPartition()
+    {
+        var letters = new Dictionary<int, SortedSet<char>>();
+        var scope = new ManagementScope(@"root\Microsoft\Windows\Storage");
+        scope.Connect();
+        using var searcher = new ManagementObjectSearcher(scope,
+            new ObjectQuery("SELECT DiskNumber, DriveLetter FROM MSFT_Partition"));
+        foreach (ManagementObject mo in searcher.Get())
+        {
+            if (mo["DiskNumber"] is not uint diskNo)
+                continue;
+            // DriveLetter は char。レター無しのパーティションは '\0'
+            char letter = Convert.ToChar(mo["DriveLetter"] ?? '\0');
+            if (letter == '\0')
+                continue;
+            if (!letters.TryGetValue((int)diskNo, out var set))
+                letters[(int)diskNo] = set = new SortedSet<char>();
+            set.Add(letter);
+        }
+        return JoinLetters(letters);
+    }
+
+    private static Dictionary<int, string> GetDiskLettersViaWin32()
+    {
+        var letters = new Dictionary<int, SortedSet<char>>();
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                "SELECT Antecedent, Dependent FROM Win32_LogicalDiskToPartition");
+            foreach (ManagementObject mo in searcher.Get())
+            {
+                // Antecedent: Win32_DiskPartition.DeviceID="Disk #0, Partition #1"
+                // Dependent:  Win32_LogicalDisk.DeviceID="C:"
+                string ant = mo["Antecedent"] as string ?? "";
+                string dep = mo["Dependent"] as string ?? "";
+                var mDisk = Regex.Match(ant, @"Disk #(\d+)");
+                var mLetter = Regex.Match(dep, @"([A-Z]):""$");
+                if (!mDisk.Success || !mLetter.Success)
+                    continue;
+                int diskNo = int.Parse(mDisk.Groups[1].Value);
+                if (!letters.TryGetValue(diskNo, out var set))
+                    letters[diskNo] = set = new SortedSet<char>();
+                set.Add(mLetter.Groups[1].Value[0]);
+            }
+        }
+        catch
+        {
+        }
+        return JoinLetters(letters);
+    }
+
+    private static Dictionary<int, string> JoinLetters(Dictionary<int, SortedSet<char>> letters) =>
+        letters.ToDictionary(kv => kv.Key, kv => string.Concat(kv.Value.Select(c => c + ":")));
+
+    /// <summary>
+    /// 物理ディスク番号 → 容量情報(そのディスクの全ボリュームを合算)を返す。
+    /// letters(GetDiskLetters の結果)でレター→ディスクを逆引きして紐付ける。
+    /// 主経路は MSFT_Volume、失敗時は Win32_LogicalDisk にフォールバック。
+    /// </summary>
+    public static Dictionary<int, DiskSpaceInfo> GetDiskSpaces(IReadOnlyDictionary<int, string> letters)
+    {
+        // レター → ディスク番号の逆引き表("C:F:" なら C と F の両方を登録)
+        var letterToDisk = new Dictionary<char, int>();
+        foreach (var (diskNo, ls) in letters)
+            foreach (char c in ls)
+                if (c != ':')
+                    letterToDisk[c] = diskNo;
+
+        var spaces = new Dictionary<int, (double free, double total)>();
+        var volLabels = new Dictionary<int, Dictionary<string, string>>();
+        try
+        {
+            var scope = new ManagementScope(@"root\Microsoft\Windows\Storage");
+            scope.Connect();
+            using var searcher = new ManagementObjectSearcher(scope,
+                new ObjectQuery("SELECT DriveLetter, Size, SizeRemaining, FileSystemLabel FROM MSFT_Volume"));
+            foreach (ManagementObject mo in searcher.Get())
+            {
+                char letter = Convert.ToChar(mo["DriveLetter"] ?? '\0');
+                if (letter == '\0' || !letterToDisk.TryGetValue(letter, out int diskNo))
+                    continue;
+                AddSpace(spaces, diskNo, Convert.ToDouble(mo["SizeRemaining"] ?? 0),
+                    Convert.ToDouble(mo["Size"] ?? 0));
+                AddLabel(volLabels, diskNo, letter, (mo["FileSystemLabel"] as string)?.Trim() ?? "");
+            }
+        }
+        catch
+        {
+            spaces.Clear();
+            volLabels.Clear();
+        }
+        if (spaces.Count == 0)
+        {
+            try
+            {
+                using var searcher = new ManagementObjectSearcher(
+                    "SELECT DeviceID, Size, FreeSpace, VolumeName FROM Win32_LogicalDisk WHERE DriveType = 3");
+                foreach (ManagementObject mo in searcher.Get())
+                {
+                    string id = (mo["DeviceID"] as string) ?? "";
+                    if (id.Length < 2 || !letterToDisk.TryGetValue(id[0], out int diskNo))
+                        continue;
+                    AddSpace(spaces, diskNo, Convert.ToDouble(mo["FreeSpace"] ?? 0),
+                        Convert.ToDouble(mo["Size"] ?? 0));
+                    AddLabel(volLabels, diskNo, id[0], (mo["VolumeName"] as string)?.Trim() ?? "");
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        const double Gb = 1024.0 * 1024.0 * 1024.0;
+        return spaces.ToDictionary(kv => kv.Key, kv => new DiskSpaceInfo
+        {
+            FreeGb = kv.Value.free / Gb,
+            TotalGb = kv.Value.total / Gb,
+            VolumeLabels = volLabels.GetValueOrDefault(kv.Key, new Dictionary<string, string>()),
+        });
+    }
+
+    private static void AddSpace(Dictionary<int, (double free, double total)> spaces,
+        int diskNo, double free, double total)
+    {
+        spaces.TryGetValue(diskNo, out var cur);
+        spaces[diskNo] = (cur.free + free, cur.total + total);
+    }
+
+    private static void AddLabel(Dictionary<int, Dictionary<string, string>> volLabels,
+        int diskNo, char letter, string label)
+    {
+        if (!volLabels.TryGetValue(diskNo, out var d))
+            volLabels[diskNo] = d = new Dictionary<string, string>();
+        d[letter.ToString()] = label;
     }
 
     private static Dictionary<int, string> GetDiskModelsViaWin32DiskDrive()

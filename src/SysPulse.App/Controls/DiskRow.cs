@@ -7,7 +7,7 @@ namespace SysPulse.App.Controls;
 /// <summary>
 /// ディスク 1 台ぶんのセル。左下エリアを 2 列 x 5 行(最大 10 台)で使う。
 /// 各セルは横幅が狭い(ウィンドウの約 1/4)ため:
-///  - 左半分: 表示名 + デバイス名の 2 行
+///  - 左半分: 表示名 / 空き・総量・空き率 / デバイス名の 3 行
 ///  - 右半分: スパークラインを背景いっぱいに描き、その前面に
 ///    使用率 + 実速度の 2 行を重ねる
 /// </summary>
@@ -18,6 +18,7 @@ public sealed class DiskRow : Grid
     private static readonly Brush DimBrush = MetricRow.FreezeBrush("#8a8a8a");
 
     private readonly TextBlock _deviceLabel;
+    private readonly TextBlock _spaceLabel;
     private readonly TextBlock _pct;
     private readonly TextBlock _rate;
     private readonly Sparkline _spark;
@@ -27,12 +28,12 @@ public sealed class DiskRow : Grid
         Background = PanelBrush;
         Margin = new Thickness(0, 1, 0, 1);
 
-        var inner = new Grid { Margin = new Thickness(6, 2, 6, 2) };
+        var inner = new Grid { Margin = new Thickness(6, 2, 6, 2), ClipToBounds = true };
         Children.Add(inner);
         inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-        // 左半分: 表示名(太字) + デバイス名(小・グレー)の 2 行
+        // 左半分: 1 行目=表示名(太字)、2 行目=空き/総量+空き率、3 行目=デバイス名
         var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         left.Children.Add(new TextBlock
         {
@@ -42,6 +43,14 @@ public sealed class DiskRow : Grid
             FontWeight = FontWeights.Bold,
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
+        _spaceLabel = new TextBlock
+        {
+            Foreground = DimBrush,
+            FontSize = 9.5,
+            Margin = new Thickness(0, 2, 0, -1),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+        left.Children.Add(_spaceLabel);
         _deviceLabel = new TextBlock
         {
             Foreground = DimBrush,
@@ -99,6 +108,12 @@ public sealed class DiskRow : Grid
         if (device.Length > 14)
             device = device[..13] + "…";
         _deviceLabel.Text = device;
+    }
+
+    /// <summary>容量の表示("833/930GB 90%" = 空き/総量+空き率)。取れないときは空文字。</summary>
+    public void SetSpace(string space)
+    {
+        _spaceLabel.Text = space;
     }
 
     public void Set(string pct, string rate, double? busy)

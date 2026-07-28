@@ -32,6 +32,7 @@ public sealed class SystemMonitor : IDisposable
     /// <summary>遅いデバイス名群。必ずバックグラウンドスレッドから呼ぶこと。</summary>
     public DeviceInfo GetDeviceInfo()
     {
+        var diskLetters = DeviceInfoProvider.GetDiskLetters();
         return new DeviceInfo
         {
             Cpu = CpuMonitor.ReadName(),
@@ -39,6 +40,8 @@ public sealed class SystemMonitor : IDisposable
             Gpu = _gpu.Name,
             Net = _net.NicName ?? "",
             Disks = DeviceInfoProvider.GetDiskModels(),
+            DiskLetters = diskLetters,
+            DiskSpaces = DeviceInfoProvider.GetDiskSpaces(diskLetters),
         };
     }
 

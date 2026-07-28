@@ -64,4 +64,17 @@ public sealed class DeviceInfo
     [JsonPropertyName("gpu")] public string Gpu { get; set; } = "";
     [JsonPropertyName("net")] public string Net { get; set; } = "";
     [JsonPropertyName("disks")] public Dictionary<int, string> Disks { get; set; } = new();
+    /// <summary>物理ディスク番号 → ドライブレター("C:" / "C:D:")。レター無しのディスクは含まない。</summary>
+    [JsonPropertyName("diskLetters")] public Dictionary<int, string> DiskLetters { get; set; } = new();
+    /// <summary>物理ディスク番号 → 容量情報(そのディスクの全ボリューム合算)。</summary>
+    [JsonPropertyName("diskSpaces")] public Dictionary<int, DiskSpaceInfo> DiskSpaces { get; set; } = new();
+}
+
+/// <summary>ディスク 1 台ぶんの容量情報(複数パーティションは合算)。</summary>
+public sealed class DiskSpaceInfo
+{
+    [JsonPropertyName("freeGb")] public double FreeGb { get; set; }
+    [JsonPropertyName("totalGb")] public double TotalGb { get; set; }
+    /// <summary>レター → ボリュームラベル(ドライブ名)。ラベル無しは空文字。</summary>
+    [JsonPropertyName("volumeLabels")] public Dictionary<string, string> VolumeLabels { get; set; } = new();
 }
