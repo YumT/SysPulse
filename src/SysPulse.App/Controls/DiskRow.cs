@@ -16,6 +16,7 @@ public sealed class DiskRow : Grid
     private static readonly Brush PanelBrush = MetricRow.FreezeBrush("#1e1e1e");
     private static readonly Brush FgBrush = MetricRow.FreezeBrush("#e0e0e0");
     private static readonly Brush DimBrush = MetricRow.FreezeBrush("#8a8a8a");
+    private static readonly Brush WarnBrush = MetricRow.FreezeBrush("#e6a01e");
 
     private readonly TextBlock _deviceLabel;
     private readonly TextBlock _spaceLabel;
@@ -23,7 +24,7 @@ public sealed class DiskRow : Grid
     private readonly TextBlock _rate;
     private readonly Sparkline _spark;
 
-    public DiskRow(string name, Color color, string device = "")
+    public DiskRow(IReadOnlyList<(string Letter, string VolLabel)> nameParts, Color color, string device = "")
     {
         Background = PanelBrush;
         Margin = new Thickness(0, 1, 0, 1);
@@ -33,16 +34,34 @@ public sealed class DiskRow : Grid
         inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-        // 左半分: 1 行目=表示名(太字)、2 行目=空き/総量+空き率、3 行目=デバイス名
+        // 左半分: 1 行目=表示名(太字。レター右は 3px、2 つ目以降のレターは左 5px)、
+        // 2 行目=空き/総量+空き率、3 行目=デバイス名
         var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        left.Children.Add(new TextBlock
+        var line1 = new StackPanel { Orientation = Orientation.Horizontal };
+        for (int i = 0; i < nameParts.Count; i++)
         {
-            Text = name,
-            Foreground = FgBrush,
-            FontSize = 10.7,
-            FontWeight = FontWeights.Bold,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        });
+            var (letter, volLabel) = nameParts[i];
+            line1.Children.Add(new TextBlock
+            {
+                Text = letter,
+                Foreground = FgBrush,
+                FontSize = 10.7,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(i == 0 ? 0 : 5, 0, 0, 0),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            if (volLabel.Length > 0)
+                line1.Children.Add(new TextBlock
+                {
+                    Text = volLabel,
+                    Foreground = FgBrush,
+                    FontSize = 10.7,
+                    FontWeight = FontWeights.Bold,
+                    Margin = new Thickness(3, 0, 0, 0),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                });
+        }
+        left.Children.Add(line1);
         _spaceLabel = new TextBlock
         {
             Foreground = DimBrush,
@@ -110,10 +129,12 @@ public sealed class DiskRow : Grid
         _deviceLabel.Text = device;
     }
 
-    /// <summary>容量の表示("833/930GB 90%" = 空き/総量+空き率)。取れないときは空文字。</summary>
-    public void SetSpace(string space)
+    /// <summary>容量の表示("833/930GB 90%" = 空き/総量+空き率)。取れないときは空文字。
+    /// warn=true(残量僅少)のときは橙気味の色にする。</summary>
+    public void SetSpace(string space, bool warn = false)
     {
         _spaceLabel.Text = space;
+        _spaceLabel.Foreground = warn ? WarnBrush : DimBrush;
     }
 
     public void Set(string pct, string rate, double? busy)

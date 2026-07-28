@@ -90,6 +90,34 @@ public static class DeviceInfoProvider
     }
 
     /// <summary>
+    /// GPU 名。NVML が使えない環境(AMD/Intel)向けのフォールバック。
+    /// Win32_VideoController から仮想/基本表示アダプタを除いた最初の名前を返す。
+    /// </summary>
+    public static string GetGpuName()
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                "SELECT Name FROM Win32_VideoController");
+            foreach (ManagementObject mo in searcher.Get())
+            {
+                string name = (mo["Name"] as string)?.Trim() ?? "";
+                if (name.Length == 0)
+                    continue;
+                // 基本表示/リモート表示などの仮想アダプタは飛ばす
+                if (name.Contains("Microsoft Basic", StringComparison.OrdinalIgnoreCase) ||
+                    name.Contains("Remote Display", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                return name;
+            }
+        }
+        catch
+        {
+        }
+        return "";
+    }
+
+    /// <summary>
     /// 物理ディスク番号 → ドライブレター("C:"、複数パーティションは "C:D:")の対応を返す。
     /// レターが 1 つも無いディスクは含めない。
     /// 主経路は MSFT_Partition(Storage プロバイダ)、失敗時は

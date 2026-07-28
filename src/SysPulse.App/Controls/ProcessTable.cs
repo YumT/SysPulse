@@ -19,10 +19,12 @@ public sealed class ProcessTable : Grid
     private static readonly Brush CpuBrush = MetricRow.FreezeBrush("#4fc3f7");
 
     private readonly TextBlock[,] _cells;
+    private readonly int[] _pids;
 
     /// <summary>CPU 負荷上位プロセスの表(CPU 降順 8 行、Idle は Core 側で除外済み)。
     /// 列は プロセス / CPU % / メモリ % / ディスク / GPU %(PDH GPU Engine を PID 毎に合算)。
-    /// 右上をイベント監視と上下分割するため行間を詰めたコンパクト表示。</summary>
+    /// 右上をイベント監視と上下分割するため行間を詰めたコンパクト表示。
+    /// プロセス名の右クリックで「ファイルの場所を開く」(その行の PID を解決する)。</summary>
     public ProcessTable(int rows = 8)
     {
         Background = PanelBrush;
@@ -42,13 +44,31 @@ public sealed class ProcessTable : Grid
             inner.Children.Add(Cell(Headers[c].Text, DimBrush, Headers[c].Left, 0, c));
 
         _cells = new TextBlock[rows, Headers.Length];
+        _pids = new int[rows];
         for (int r = 0; r < rows; r++)
             for (int c = 0; c < Headers.Length; c++)
             {
                 var tb = Cell("", c == 1 ? CpuBrush : FgBrush, Headers[c].Left, r + 1, c);
+                if (c == 0)
+                    tb.ContextMenu = BuildRowMenu(r);
                 _cells[r, c] = tb;
                 inner.Children.Add(tb);
             }
+    }
+
+    /// <summary>行の右クリックメニュー。行番号は構築時に固定し、
+    /// PID はクリック時に _pids から引く(行の中身は毎サンプル入れ替わるため)。</summary>
+    private ContextMenu BuildRowMenu(int row)
+    {
+        var menu = new ContextMenu();
+        var item = new MenuItem { Header = "ファイルの場所を開く" };
+        item.Click += (_, _) =>
+        {
+            if (row < _pids.Length && _pids[row] > 0)
+                ExternalTools.OpenProcessFileLocation(_pids[row]);
+        };
+        menu.Items.Add(item);
+        return menu;
     }
 
     private static TextBlock Cell(string text, Brush fg, bool left, int row, int col)
@@ -74,6 +94,7 @@ public sealed class ProcessTable : Grid
             if (r < rows.Count)
             {
                 var p = rows[r];
+                _pids[r] = p.Pid;
                 string name = p.Name;
                 if (name.Length > 14)
                     name = name[..13] + "…";
@@ -85,6 +106,7 @@ public sealed class ProcessTable : Grid
             }
             else
             {
+                _pids[r] = 0;
                 for (int c = 0; c < Headers.Length; c++)
                     _cells[r, c].Text = "";
             }

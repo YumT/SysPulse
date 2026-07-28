@@ -10,7 +10,9 @@
   - `Metrics/` — CPU(GetSystemTimes + PDH)、メモリ(GlobalMemoryStatusEx)、
     ディスク(PDH `\PhysicalDisk(*)\% Disk Time`)、ネット(NIC バイトカウンタ差分)、
     プロセス(TotalProcessorTime 差分 + GetProcessIoCounters +
-    PDH `\GPU Engine(*)\Utilization Percentage` を pid 毎に合算)、GPU 全体(NVML P/Invoke)
+    PDH `\GPU Engine(*)\Utilization Percentage` を pid 毎に合算)、
+    GPU 全体(NVML P/Invoke。AMD/Intel など NVML が使えない環境では
+    PDH GPU Engine の全インスタンス合算にフォールバック。温度は NVML のみ)
   - `Pdh/PdhQuery.cs` — PDH ラッパー。`PdhAddEnglishCounter` を使うため
     日本語 Windows でも英語カウンタ名が使える(PerformanceCounter クラスは不可)
   - `DeviceInfo/DeviceInfoProvider.cs` — WMI 系の遅いデバイス名取得。
@@ -80,7 +82,7 @@
   物理ディスクは "C:システム F:データ" で並びは先頭レター基準)。
   その下の 2 行目に空き/総量+空き率("833/930GB 90%"。複数パーティションは
   合算。MSFT_Volume で取得、失敗時は Win32_LogicalDisk)を表示し、
-  セルから溢れた分はクリップして隠す。
+  セルから溢れた分はクリップして隠す。空き率 10% 未満は橙気味の色で警告する。
   レターが 1 つも取れないディスクは従来の「ディスク N」表記にフォールバックし、
   並びも最後尾(番号順)になる
   (レター対応は WMI の MSFT_Partition で取得、失敗時は Win32_LogicalDiskToPartition)
@@ -136,11 +138,21 @@
 (すべて管理者権限不要。`ExternalTools.cs`):
 
 - **タスクマネージャー** — `taskmgr.exe`
+- **リソース モニター** — `resmon.exe`
+- **パフォーマンス モニター** — `perfmon.exe`
 - **イベントビューアー (システムログ)** — `eventvwr.exe /c:System`
   (Windows ログ > システムを選択した状態で起動)
+- **ディスクの管理** — `diskmgmt.msc`
 - **記憶域 (コントロール パネル)** — `control.exe /name Microsoft.StorageSpaces`
+- **ネットワーク接続** — `ncpa.cpl`
+- **電源オプション** — `powercfg.cpl`
 - **音量ミキサー** — `ms-settings:apps-volume`(設定 > システム > サウンド)
 - **インストールされているアプリ** — `ms-settings:appsfeatures`(設定 > アプリ)
+- **Kimi Console** — `https://www.kimi.com/code/console`(ブラウザ)
+
+プロセス表のプロセス名を右クリックすると、その行のプロセスの
+**「ファイルの場所を開く」**(explorer /select)が使える
+(パスが取れないシステムプロセス等では何も起きない)。
 
 ## 常駐動作(タスクトレイ)
 
@@ -186,7 +198,8 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 ## この PC での検証結果(2026-07-28)
 
 - CPU 名 / 定格クロック / メモリ構成(DDR4-2667 8GB+16GB)/ NIC 名 / ディスクモデルを正しく取得
-- GPU は Radeon Vega 内蔵のため NVML 非対応 → `null`(「—」表示)に正しくフォールバック
+- GPU は Radeon Vega 内蔵のため NVML 非対応 → PDH GPU Engine 合算にフォールバックし
+  負荷を表示(温度は NVML のみのため非表示)
 - MSFT_Disk の Online 判定で切断済みディスクを除外
 - GUI 常駐計測(Release): **CPU 約 0.3〜0.6%**(typeperf 全コア合計の 2.3〜4.7% ÷ 8 スレッド)、
   ワーキングセット 約 113〜128MB(Python 版 5% から大幅改善。メモリは今後の削減余地あり)

@@ -1,12 +1,16 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using SysPulse.Core.Models;
+using SysPulse.Core.Pdh;
 
 namespace SysPulse.Core.Metrics;
 
 /// <summary>
-/// NVIDIA GPU の負荷・温度。NVML(nvml.dll)の P/Invoke。管理者権限不要。
-/// NVIDIA 以外 / ドライバ無しの環境では IsAvailable=false になり「—」表示に回す。
+/// GPU 全体の負荷・温度。主経路は NVML(nvml.dll)の P/Invoke(NVIDIA。管理者権限不要)。
+/// NVIDIA 以外 / ドライバ無しの環境では PDH "\GPU Engine(*)\Utilization Percentage" の
+/// 全インスタンス合算(100% クランプ)にフォールバックする(AMD/Intel でも取れる。
+/// ただし温度は NVML でしか取れないので null)。
+/// どちらも駄目なら Sample() は null → 「—」表示に回す。
 /// </summary>
 public sealed class GpuMonitor : IDisposable
 {
@@ -40,6 +44,8 @@ public sealed class GpuMonitor : IDisposable
 
     private IntPtr _device;
     private readonly string _name = "";
+    private PdhQuery? _pdh;
+    private readonly IntPtr? _pdhGpuUtil;
 
     public bool IsAvailable { get; }
     public string Name => _name;
@@ -67,18 +73,55 @@ public sealed class GpuMonitor : IDisposable
         catch (EntryPointNotFoundException)
         {
         }
+
+        // NVML が使えなければ PDH GPU Engine にフォールバック(AMD/Intel 用)
+        if (!IsAvailable)
+        {
+            try
+            {
+                _pdh = new PdhQuery();
+                _pdhGpuUtil = _pdh.AddCounter(@"\GPU Engine(*)\Utilization Percentage");
+                if (_pdhGpuUtil is null)
+                {
+                    _pdh.Dispose();
+                    _pdh = null;
+                }
+            }
+            catch
+            {
+                _pdh = null;
+            }
+        }
     }
 
     public GpuSample? Sample()
     {
-        if (!IsAvailable)
-            return null;
-        double? load = null, temp = null;
-        if (NvmlGetUtilization(_device, out var u) == NVML_SUCCESS)
-            load = u.Gpu;
-        if (NvmlGetTemperature(_device, NVML_TEMPERATURE_GPU, out uint t) == NVML_SUCCESS)
-            temp = t;
-        return new GpuSample { Load = load, Temp = temp };
+        if (IsAvailable)
+        {
+            double? load = null, temp = null;
+            if (NvmlGetUtilization(_device, out var u) == NVML_SUCCESS)
+                load = u.Gpu;
+            if (NvmlGetTemperature(_device, NVML_TEMPERATURE_GPU, out uint t) == NVML_SUCCESS)
+                temp = t;
+            return new GpuSample { Load = load, Temp = temp };
+        }
+
+        // PDH フォールバック: 全インスタンス合算(複数エンジンで 100 を
+        // 超えることがあるのでタスクマネージャー同様に丸める)。温度は取れない
+        if (_pdh != null)
+        {
+            _pdh.Collect();
+            double sum = 0;
+            var any = false;
+            foreach (var (_, value) in _pdh.GetWildcardValues(_pdhGpuUtil))
+            {
+                sum += value;
+                any = true;
+            }
+            if (any)
+                return new GpuSample { Load = Math.Min(sum, 100.0), Temp = null };
+        }
+        return null;
     }
 
     public void Dispose()
@@ -87,5 +130,6 @@ public sealed class GpuMonitor : IDisposable
         {
             try { NvmlShutdownNative(); } catch { }
         }
+        _pdh?.Dispose();
     }
 }

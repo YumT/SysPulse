@@ -37,7 +37,7 @@ public sealed class SystemMonitor : IDisposable
         {
             Cpu = CpuMonitor.ReadName(),
             Mem = DeviceInfoProvider.GetMemoryInfo(),
-            Gpu = _gpu.Name,
+            Gpu = _gpu.Name.Length > 0 ? _gpu.Name : DeviceInfoProvider.GetGpuName(),
             Net = _net.NicName ?? "",
             Disks = DeviceInfoProvider.GetDiskModels(),
             DiskLetters = diskLetters,
