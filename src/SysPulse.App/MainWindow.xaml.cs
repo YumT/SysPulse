@@ -347,6 +347,10 @@ public partial class MainWindow : Window
 
     private static string FmtPct(double? v) => v is double d ? $"{d:F0} %" : "—";
 
+    /// <summary>ディスク実速度。500MB/s 以上は "0.9GB/s" のように GB/s 表記。</summary>
+    private static string FmtRate(double mbps) =>
+        mbps >= 500 ? $"{mbps / 1024.0:F1}GB/s" : $"{mbps:F1} MB/s";
+
     private void ApplySnapshot(Snapshot snap)
     {
         if (_rows.TryGetValue("cpu", out var cpu))
@@ -376,7 +380,7 @@ public partial class MainWindow : Window
         foreach (var (num, row) in _diskRows)
         {
             if (snap.Disks.TryGetValue(num, out var ds))
-                row.Set(FmtPct(ds.Busy), ds.Mbps is double m ? $"{m:F1} MB/s" : "", ds.Busy);
+                row.Set(FmtPct(ds.Busy), ds.Mbps is double m ? FmtRate(m) : "", ds.Busy);
             else
                 row.Set("—", "", (double?)null);
         }
