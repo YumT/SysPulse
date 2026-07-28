@@ -92,7 +92,19 @@ public sealed class CriticalEventPanel : Grid
             _tabLabels[level] = label;
             _tabUnderlines[level] = underline;
         }
-        inner.Children.Add(tabBar);
+        // タブバー右端に件数の意味を注記(件数は 24 時間以内の集計であることが分かりにくいため)
+        var tabBarArea = new DockPanel();
+        var note = new TextBlock
+        {
+            Text = "※ 件数は24時間以内",
+            Foreground = DimBrush,
+            FontSize = 8.5,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        DockPanel.SetDock(note, Dock.Right);
+        tabBarArea.Children.Add(note);
+        tabBarArea.Children.Add(tabBar); // 最後の子が残り幅いっぱいに広がる
+        inner.Children.Add(tabBarArea);
 
         _stack = new StackPanel { Margin = new Thickness(0, 3, 0, 0) };
         Grid.SetRow(_stack, 1);
