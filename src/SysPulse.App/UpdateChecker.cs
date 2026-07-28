@@ -3,7 +3,9 @@ using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace SysPulse.App;
 
@@ -11,6 +13,8 @@ namespace SysPulse.App;
 /// GitHub Releases ベースの自動更新。
 /// 起動時に最新リリースを確認し、新しければバックグラウンドでダウンロード・
 /// 展開まで済ませる。適用(差し替え+再起動)はユーザーがメニューから指示したときだけ。
+/// zip は <zip名>.sha256 アセットと SHA256 照合する。ハッシュが無い・不一致の
+/// リリースには更新しない(fail closed)。
 /// 通信・DL・展開の失敗はすべて null 返しで黙殺する(モニター本体に影響させない)。
 /// </summary>
 public static class UpdateChecker
@@ -46,28 +50,39 @@ public static class UpdateChecker
             if (!Version.TryParse(tag.TrimStart('v'), out Version? latest) || latest <= CurrentVersion)
                 return null;
 
-            string? assetUrl = null;
+            string? assetUrl = null, hashUrl = null;
             foreach (var a in doc.RootElement.GetProperty("assets").EnumerateArray())
             {
                 string name = a.GetProperty("name").GetString() ?? "";
                 if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-                {
                     assetUrl = a.GetProperty("browser_download_url").GetString();
-                    break;
-                }
+                else if (name.EndsWith(".zip.sha256", StringComparison.OrdinalIgnoreCase))
+                    hashUrl = a.GetProperty("browser_download_url").GetString();
             }
-            if (assetUrl == null)
+            // fail closed: ハッシュ アセットが無いリリースには更新しない(照合不能なため)
+            if (assetUrl == null || hashUrl == null)
                 return null;
 
-            // %TEMP%\syspulse-update\stage に展開(前回の残りがあれば捨てる)
+            string zipPath = Path.Combine(Path.GetTempPath(), "syspulse-update", "update.zip");
+            byte[] zipBytes = await http.GetByteArrayAsync(assetUrl, ct);
+
+            // SHA256 照合(<zip名>.sha256 アセットの先頭の 64 桁 hex と比較)
+            string hashText = await http.GetStringAsync(hashUrl, ct);
+            var m = Regex.Match(hashText, @"\b[0-9a-fA-F]{64}\b");
+            if (!m.Success)
+                return null;
+            string actual = Convert.ToHexString(SHA256.HashData(zipBytes));
+            if (!actual.Equals(m.Value, StringComparison.OrdinalIgnoreCase))
+                return null; // 改ざん・壊れの可能性。適用も提示もしない
+
+            // 照合 OK。%TEMP%\syspulse-update\stage に展開(前回の残りがあれば捨てる)
             string dir = Path.Combine(Path.GetTempPath(), "syspulse-update");
             if (Directory.Exists(dir))
                 Directory.Delete(dir, true);
             string stage = Path.Combine(dir, "stage");
             Directory.CreateDirectory(stage);
 
-            string zipPath = Path.Combine(dir, "update.zip");
-            await File.WriteAllBytesAsync(zipPath, await http.GetByteArrayAsync(assetUrl, ct), ct);
+            await File.WriteAllBytesAsync(zipPath, zipBytes, ct);
             ZipFile.ExtractToDirectory(zipPath, stage);
 
             // ユーザー設定は絶対に上書きしない(exe と bat だけ適用対象)
