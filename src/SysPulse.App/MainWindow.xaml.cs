@@ -207,12 +207,20 @@ public partial class MainWindow : Window
         // 右クリックメニュー(どのパネル上でも表示。子要素から親へ辿って出る)
         Root.ContextMenu = ExternalTools.BuildContextMenu();
 
-        // AI Usage エリアの表示/非表示(デフォルト表示。
+        // AI Usage エリアの表示/非表示(デフォルト表示。状態は settings.json に保存し次回起動時に復元。
         // 非表示時は右上のプロセス+イベント領域を縦いっぱいに伸ばす)
-        var usageToggle = new MenuItem { Header = "AI Usage を表示", IsCheckable = true, IsChecked = true };
-        usageToggle.Click += (_, _) => SetUsageVisible(usageToggle.IsChecked);
+        var usageToggle = new MenuItem { Header = "AI Usage を表示", IsCheckable = true, IsChecked = _usageSettings.ShowAiUsage };
+        usageToggle.Click += (_, _) =>
+        {
+            SetUsageVisible(usageToggle.IsChecked);
+            _usageSettings.ShowAiUsage = usageToggle.IsChecked;
+            _usageSettings.Save();
+        };
         Root.ContextMenu.Items.Add(new Separator());
         Root.ContextMenu.Items.Add(usageToggle);
+
+        // 前回の表示/非表示状態を復元
+        SetUsageVisible(_usageSettings.ShowAiUsage);
     }
 
     /// <summary>右下の AI Usage エリアの表示/非表示を切り替える。</summary>

@@ -21,6 +21,8 @@ public sealed class Settings
     public bool NotifyOnThreshold { get; set; } = true;
     public bool EnableClaude { get; set; } = true;
     public bool EnableKimi { get; set; } = true;
+    /// <summary>メインウィンドウの AI Usage エリアの表示/非表示(右クリックメニューで切替)。</summary>
+    public bool ShowAiUsage { get; set; } = true;
 
     public static Settings Load()
     {
@@ -38,6 +40,7 @@ public sealed class Settings
             s.NotifyOnThreshold = GetBool(r, "notifyOnThreshold", s.NotifyOnThreshold);
             s.EnableClaude = GetBool(r, "enableClaude", s.EnableClaude);
             s.EnableKimi = GetBool(r, "enableKimi", s.EnableKimi);
+            s.ShowAiUsage = GetBool(r, "showAiUsage", s.ShowAiUsage);
             if (r.TryGetProperty("x", out var x) && x.ValueKind == JsonValueKind.Number) s.X = x.GetInt32();
             if (r.TryGetProperty("y", out var y) && y.ValueKind == JsonValueKind.Number) s.Y = y.GetInt32();
         }
@@ -63,6 +66,7 @@ public sealed class Settings
                 ["notifyOnThreshold"] = NotifyOnThreshold,
                 ["enableClaude"] = EnableClaude,
                 ["enableKimi"] = EnableKimi,
+                ["showAiUsage"] = ShowAiUsage,
                 ["x"] = X,
                 ["y"] = Y,
             }, new JsonSerializerOptions { WriteIndented = true });
