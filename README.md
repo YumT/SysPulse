@@ -151,6 +151,8 @@
 - **音量ミキサー** — `ms-settings:apps-volume`(設定 > システム > サウンド)
 - **インストールされているアプリ** — `ms-settings:appsfeatures`(設定 > アプリ)
 - **Kimi Console** — `https://www.kimi.com/code/console`(ブラウザ)
+- **AI Usage を表示** — チェックで右下の AI Usage エリアの表示/非表示を切り替え
+  (デフォルト表示。非表示時は右上のプロセス+イベント領域を縦いっぱいに伸ばす)
 
 プロセス表のプロセス名を右クリックすると、その行のプロセスの
 **「ファイルの場所を開く」**(explorer /select)が使える

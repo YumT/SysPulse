@@ -39,6 +39,8 @@ public partial class MainWindow : Window
     private ProcessTable _procTable = null!;
     private CriticalEventPanel _eventPanel = null!;
     private Grid _bl = null!;
+    private Grid _tr = null!;
+    private Grid _br = null!;
     private UsagePanel _usagePanel = null!;
     private Usage.Settings _usageSettings = null!;
     private UsagePoller? _usagePoller;
@@ -173,15 +175,15 @@ public partial class MainWindow : Window
         AddRow(tl, "net", "イーサネット", [CDown, CUp], null, subLarge: true, subColor: CUp);
 
         // 右上: プロセス表(上半分) + システムログイベント(下半分)
-        var tr = MakeBlock(0, 1);
-        tr.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        tr.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _tr = MakeBlock(0, 1);
+        _tr.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _tr.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _procTable = new ProcessTable(rows: 8);
         Grid.SetRow(_procTable, 0);
-        tr.Children.Add(_procTable);
+        _tr.Children.Add(_procTable);
         _eventPanel = new CriticalEventPanel();
         Grid.SetRow(_eventPanel, 1);
-        tr.Children.Add(_eventPanel);
+        _tr.Children.Add(_eventPanel);
 
         // 左下: ディスク(2 列 x 5 行。行は Online 判定の結果が来てから構築)
         _bl = MakeBlock(1, 0);
@@ -197,13 +199,27 @@ public partial class MainWindow : Window
         _bl.Children.Add(_diskPlaceholder);
 
         // 右下: AI Usage(UsageWatcher 統合)
-        var br = MakeBlock(1, 1);
+        _br = MakeBlock(1, 1);
         _usageSettings = Usage.Settings.Load();
         _usagePanel = new UsagePanel(_usageSettings);
-        br.Children.Add(_usagePanel);
+        _br.Children.Add(_usagePanel);
 
         // 右クリックメニュー(どのパネル上でも表示。子要素から親へ辿って出る)
         Root.ContextMenu = ExternalTools.BuildContextMenu();
+
+        // AI Usage エリアの表示/非表示(デフォルト表示。
+        // 非表示時は右上のプロセス+イベント領域を縦いっぱいに伸ばす)
+        var usageToggle = new MenuItem { Header = "AI Usage を表示", IsCheckable = true, IsChecked = true };
+        usageToggle.Click += (_, _) => SetUsageVisible(usageToggle.IsChecked);
+        Root.ContextMenu.Items.Add(new Separator());
+        Root.ContextMenu.Items.Add(usageToggle);
+    }
+
+    /// <summary>右下の AI Usage エリアの表示/非表示を切り替える。</summary>
+    private void SetUsageVisible(bool visible)
+    {
+        _br.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        Grid.SetRowSpan(_tr, visible ? 1 : 2);
     }
 
     private Grid MakeBlock(int row, int col)
