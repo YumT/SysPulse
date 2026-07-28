@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Media.Effects;
 
 namespace SysPulse.App.Controls;
 
@@ -58,20 +57,17 @@ public sealed class DiskRow : Grid
         _spark = new Sparkline([color], 100.0);
         right.Children.Add(_spark);
 
-        var overlay = new StackPanel
+        // グラフに紛れないよう、数値の背後には半透明の暗いプレートを敷く
+        var overlay = new Border
         {
+            Background = MetricRow.FreezeBrush("#D9141414"),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(4, 0, 4, 0),
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
         };
-        // 背景のグラフに紛れないよう、文字に黒いハロー(全方位シャドウ)を付ける
-        var halo = new DropShadowEffect
-        {
-            Color = Colors.Black,
-            BlurRadius = 3,
-            ShadowDepth = 0,
-            Opacity = 1.0,
-            RenderingBias = RenderingBias.Quality,
-        };
+        var overlayText = new StackPanel();
+        overlay.Child = overlayText;
         _pct = new TextBlock
         {
             Text = "—",
@@ -79,17 +75,15 @@ public sealed class DiskRow : Grid
             FontSize = 12,
             FontWeight = FontWeights.Bold,
             TextAlignment = TextAlignment.Center,
-            Effect = halo,
         };
-        overlay.Children.Add(_pct);
+        overlayText.Children.Add(_pct);
         _rate = new TextBlock
         {
             Foreground = DimBrush,
             FontSize = 9.5,
             TextAlignment = TextAlignment.Center,
-            Effect = halo,
         };
-        overlay.Children.Add(_rate);
+        overlayText.Children.Add(_rate);
         right.Children.Add(overlay);
 
         Grid.SetColumn(right, 1);
