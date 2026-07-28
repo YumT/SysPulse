@@ -9,6 +9,8 @@
     <Nullable>enable</Nullable>
     <AssemblyName>SysPulse</AssemblyName>
     <RootNamespace>SysPulse.App</RootNamespace>
+    <!-- リリースのタグ vX.Y.Z と一致させること(自動更新の比較に使う) -->
+    <Version>1.0.1</Version>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 

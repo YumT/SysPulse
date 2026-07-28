@@ -29,6 +29,7 @@
   - `Controls/CriticalEventPanel.cs` — システムログイベント監視(右上 2/3。レベル別タブ)
   - `Usage/` — UsageWatcher から移植した AI 使用量取得(Providers/Poller/Settings/Log)
   - `ExternalTools.cs` — 右クリックメニューから開く外部ツール(後述)
+  - `UpdateChecker.cs` — GitHub Releases ベースの自動更新(後述)
   - `config.json` — PC 固有設定(下記)
 
 ## レイアウト
@@ -154,6 +155,20 @@
 プロセス表のプロセス名を右クリックすると、その行のプロセスの
 **「ファイルの場所を開く」**(explorer /select)が使える
 (パスが取れないシステムプロセス等では何も起きない)。
+
+## 自動更新(GitHub Releases)
+
+起動時に `api.github.com/repos/YumT/SysPulse/releases/latest` を確認し、
+`SysPulse.App.csproj` の `<Version>` より新しいタグがあれば
+バックグラウンドで zip のダウンロード・`%TEMP%\syspulse-update\stage` への
+展開まで済ませる(`UpdateChecker.cs`)。右クリックメニューの先頭に
+「vX.Y.Z に更新」が出るので、クリックすると差し替え bat が
+「終了待ち → exe/bat の上書き → 再起動」を行う。
+
+- チェックは起動時のみ(定期ポーリングなし)。失敗時は何も出ない(黙殺)
+- **config.json / window-state.json は上書きしない**(stage から config.json を除去)
+- リリースを出すときは **csproj の `<Version>` をタグと一致させてから**
+  ビルド・publish すること(一致していないと更新が無限に提示される)
 
 ## 常駐動作(タスクトレイ)
 

@@ -257,6 +257,39 @@ public partial class MainWindow : Window
         _usageTick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         _usageTick.Tick += (_, _) => _usagePanel.Tick();
         _usageTick.Start();
+
+        // 自動更新チェック(起動時のみ。あれば DL まで済ませてメニューに出す)
+        _ = CheckForUpdateAsync();
+    }
+
+    /// <summary>起動時の更新チェック。新バージョンがあれば DL・展開まで済ませ、
+    /// 右クリックメニューの先頭に適用項目を挿入する。</summary>
+    private async Task CheckForUpdateAsync()
+    {
+        var info = await UpdateChecker.CheckAndDownloadAsync(CancellationToken.None);
+        if (info == null || _stop)
+            return;
+        try
+        {
+            _ = Dispatcher.BeginInvoke(() =>
+            {
+                var menu = Root.ContextMenu;
+                var item = new MenuItem
+                {
+                    Header = $"v{info.Version} に更新 (ダウンロード済み・クリックで適用)",
+                    FontWeight = FontWeights.Bold,
+                };
+                item.Click += (_, _) =>
+                {
+                    UpdateChecker.LaunchUpdater(info);
+                    _reallyExit = true; // ×ボタンと違いトレイに退避させず完全終了させる
+                    Close();
+                };
+                menu.Items.Insert(0, item);
+                menu.Items.Insert(1, new Separator());
+            });
+        }
+        catch (InvalidOperationException) { /* 終了中 */ }
     }
 
     private void SampleLoop()
