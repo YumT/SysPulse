@@ -185,6 +185,13 @@ dotnet publish src/SysPulse.App -c Release -r win-x64 --self-contained true \
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
+配布(zip 同梱)向けには、exe と同じフォルダで実行する自動起動の登録/解除 bat を
+用意している(どちらもスタートアップフォルダの `SysPulse.lnk` を作成/削除するだけ。
+管理者権限不要):
+
+- `autostart-register.bat` — 登録(同じフォルダの SysPulse.exe をログオン時に起動)
+- `autostart-unregister.bat` — 解除
+
 ## 動作確認
 
 ```sh
