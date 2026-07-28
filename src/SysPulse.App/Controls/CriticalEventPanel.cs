@@ -18,9 +18,11 @@ public sealed class CriticalEventPanel : Grid
     private static readonly Brush FgBrush = MetricRow.FreezeBrush("#e0e0e0");
     private static readonly Brush DimBrush = MetricRow.FreezeBrush("#8a8a8a");
     private static readonly Brush CritBrush = MetricRow.FreezeBrush("#ef5350");
+    private static readonly Brush ErrBrush = MetricRow.FreezeBrush("#e6a01e");
+    private static readonly Brush WarnBrush = MetricRow.FreezeBrush("#fdd835");
 
     /// <summary>1 件ぶん。When=null は取得失敗などの注記行。</summary>
-    public sealed record Entry(DateTime? When, string Provider, long Id, string Text);
+    public sealed record Entry(DateTime? When, string Provider, long Id, string Text, byte Level);
 
     private readonly StackPanel _stack;
 
@@ -70,10 +72,17 @@ public sealed class CriticalEventPanel : Grid
                 continue;
             }
 
+            var levelBrush = e.Level switch
+            {
+                1 => CritBrush,   // 重大
+                2 => ErrBrush,    // エラー
+                3 => WarnBrush,   // 警告
+                _ => DimBrush,    // 情報
+            };
             _stack.Children.Add(new TextBlock
             {
                 Text = $"{when:M/d H:mm}  {e.Provider} (#{e.Id})",
-                Foreground = CritBrush,
+                Foreground = levelBrush,
                 FontSize = 9.5,
                 FontWeight = FontWeights.Bold,
                 TextTrimming = TextTrimming.CharacterEllipsis,
@@ -89,13 +98,15 @@ public sealed class CriticalEventPanel : Grid
         }
     }
 
-    /// <summary>直近 count 件を新しい順に返す。失敗時は注記行 1 件を返す。</summary>
+    /// <summary>直近 count 件を新しい順に返す。失敗時は注記行 1 件を返す。
+    /// TODO(表示確認用): 現在は重大以外(Level 2〜4)も含めている。最終的は Level=1 のみ。</summary>
     public static IReadOnlyList<Entry> QueryRecent(int count)
     {
         var list = new List<Entry>();
         try
         {
-            var query = new EventLogQuery("System", PathType.LogName, "*[System[(Level=1)]]")
+            var query = new EventLogQuery("System", PathType.LogName,
+                "*[System[(Level=2 or Level=3 or Level=4)]]")
             {
                 ReverseDirection = true, // 新しい順
             };
@@ -112,12 +123,13 @@ public sealed class CriticalEventPanel : Grid
                 int nl = text.IndexOfAny(['\r', '\n']);
                 if (nl >= 0)
                     text = text[..nl];
-                list.Add(new Entry(rec.TimeCreated, rec.ProviderName ?? "", rec.Id, text));
+                list.Add(new Entry(rec.TimeCreated, rec.ProviderName ?? "", rec.Id,
+                    text, rec.Level ?? 0));
             }
         }
         catch (Exception ex)
         {
-            list.Add(new Entry(null, "", 0, "イベントログの読み取りに失敗: " + ex.Message));
+            list.Add(new Entry(null, "", 0, "イベントログの読み取りに失敗: " + ex.Message, 0));
         }
         return list;
     }

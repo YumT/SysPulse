@@ -33,8 +33,9 @@ public sealed class ProcessTable : Grid
         inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 90 });
         for (int c = 1; c < Headers.Length; c++)
             inner.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 40 });
+        // 行は内容量ぴったり(Auto)にして行間を最小に。フォントは元の大きさのまま
         for (int r = 0; r <= rows; r++)
-            inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            inner.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         for (int c = 0; c < Headers.Length; c++)
             inner.Children.Add(Cell(Headers[c].Text, DimBrush, Headers[c].Left, 0, c));
@@ -55,7 +56,7 @@ public sealed class ProcessTable : Grid
         {
             Text = text,
             Foreground = fg,
-            FontSize = 9,
+            FontSize = 10.7,
             TextAlignment = left ? TextAlignment.Left : TextAlignment.Right,
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
