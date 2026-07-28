@@ -20,12 +20,14 @@ public sealed class ProcessTable : Grid
 
     private readonly TextBlock[,] _cells;
 
+    /// <summary>CPU 負荷上位プロセスの表(CPU 降順 8 行、Idle は Core 側で除外済み)。
+    /// 右上をイベント監視と上下分割するため行間を詰めたコンパクト表示。</summary>
     public ProcessTable(int rows = 8)
     {
         Background = PanelBrush;
         Margin = new Thickness(0, 1, 0, 1);
 
-        var inner = new Grid { Margin = new Thickness(8, 4, 8, 4) };
+        var inner = new Grid { Margin = new Thickness(8, 1, 8, 1) };
         Children.Add(inner);
 
         inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 90 });
@@ -53,7 +55,7 @@ public sealed class ProcessTable : Grid
         {
             Text = text,
             Foreground = fg,
-            FontSize = 10.7,
+            FontSize = 9,
             TextAlignment = left ? TextAlignment.Left : TextAlignment.Right,
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,

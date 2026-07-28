@@ -23,6 +23,7 @@
   - `Controls/MetricRow.cs` / `Controls/ProcessTable.cs` — メトリクス行 / プロセス表
   - `Controls/DiskRow.cs` — ディスクセル(2 列 x 5 行。背景スパークライン+2 行表示)
   - `Controls/UsagePanel.cs` — AI Usage ゲージ(右下パネル。後述)
+  - `Controls/CriticalEventPanel.cs` — システムログ「重大」イベント監視(右上 2/3)
   - `Usage/` — UsageWatcher から移植した AI 使用量取得(Providers/Poller/Settings/Log)
   - `config.json` — PC 固有設定(下記)
 
@@ -30,10 +31,20 @@
 
 ```
 左上: CPU / メモリ / GPU / イーサネット(負荷・速度・スパークライン)
-右上: CPU 負荷上位プロセス(CPU降順、メモリ・ディスク I/O 付き)
-左下: ディスク(2 列 x 5 行のセル。背景スパークライン付き)
+右上: プロセス表(上 1/3・行間圧縮) + システムログ重大イベント(下 2/3)
+左下: ディスク(2 列。背景スパークライン付きセル)
 右下: AI Usage(Claude / Kimi の使用量ゲージ)
 ```
+
+## システムログ重大イベント
+
+右上エリアの下 2/3 で、イベントビューアーのシステムログから
+「重大」(Level=1)だけを監視する(60 秒周期のポーリング)。
+
+- `EventLogQuery("System", ..., "*[System[(Level=1)]]")` を新しい順に直近 6 件表示
+  (1 行目=日時+ソース+ID、2 行目=メッセージ先頭行)
+- System ログは標準ユーザーで読めるため**管理者権限不要**(Security ログは不可)
+- 0 件のときは「重大イベントなし」、取得失敗時は注記を表示
 
 ## 設定(config.json)・状態(window-state.json)
 

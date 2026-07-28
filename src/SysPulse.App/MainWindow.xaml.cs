@@ -13,8 +13,9 @@ namespace SysPulse.App;
 
 /// <summary>
 /// 2x2 レイアウトの常駐モニター。
-/// 左上: CPU/メモリ/GPU/イーサネット / 右上: プロセス表
-/// 左下: ディスク(全台・グラフなし) / 右下: AI Usage(UsageWatcher 統合)
+/// 左上: CPU/メモリ/GPU/イーサネット
+/// 右上: プロセス表(上 1/3) + システムログ重大イベント(下 2/3)
+/// 左下: ディスク(2 列・背景グラフ付き) / 右下: AI Usage(UsageWatcher 統合)
 /// 計測はバックグラウンドスレッド、描画は UI スレッド。
 /// ドラッグ/リサイズ中は WM_ENTERSIZEMOVE/EXITSIZEMOVE で検出して描画を止める。
 /// </summary>
@@ -36,6 +37,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, MetricRow> _rows = new();
     private readonly Dictionary<int, DiskRow> _diskRows = new();
     private ProcessTable _procTable = null!;
+    private CriticalEventPanel _eventPanel = null!;
     private Grid _bl = null!;
     private UsagePanel _usagePanel = null!;
     private Usage.Settings _usageSettings = null!;
@@ -47,6 +49,7 @@ public partial class MainWindow : Window
     private volatile bool _dragging;
     private Thread? _samplerThread;
     private Thread? _namesThread;
+    private Thread? _eventsThread;
 
     private bool _disksBuilt;
     private List<(int num, string label)> _diskOrder = new();
@@ -169,10 +172,16 @@ public partial class MainWindow : Window
         AddRow(tl, "gpu", "GPU", [CGpu], 100.0);
         AddRow(tl, "net", "イーサネット", [CDown, CUp], null, subLarge: true, subColor: CUp);
 
-        // 右上: プロセス表
+        // 右上: プロセス表(上 1/3・行間圧縮) + システムログ重大イベント(下 2/3)
         var tr = MakeBlock(0, 1);
+        tr.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        tr.RowDefinitions.Add(new RowDefinition { Height = new GridLength(2, GridUnitType.Star) });
         _procTable = new ProcessTable(rows: 8);
+        Grid.SetRow(_procTable, 0);
         tr.Children.Add(_procTable);
+        _eventPanel = new CriticalEventPanel();
+        Grid.SetRow(_eventPanel, 1);
+        tr.Children.Add(_eventPanel);
 
         // 左下: ディスク(2 列 x 5 行。行は Online 判定の結果が来てから構築)
         _bl = MakeBlock(1, 0);
@@ -225,6 +234,8 @@ public partial class MainWindow : Window
         _samplerThread.Start();
         _namesThread = new Thread(NamesLoop) { IsBackground = true, Name = "SysPulse.Names" };
         _namesThread.Start();
+        _eventsThread = new Thread(EventsLoop) { IsBackground = true, Name = "SysPulse.Events" };
+        _eventsThread.Start();
 
         // AI Usage ポーリング(120秒周期 + 429 バックオフ。通信失敗時は直前値を保持)
         var providers = new List<IUsageProvider>();
@@ -276,6 +287,22 @@ public partial class MainWindow : Window
                 catch (InvalidOperationException) { }
             }
             for (int waited = 0; waited < refreshMs && !_stop; waited += 200)
+                Thread.Sleep(200);
+        }
+    }
+
+    /// <summary>システムログの「重大」イベントを 60 秒周期で確認する。</summary>
+    private void EventsLoop()
+    {
+        while (!_stop)
+        {
+            var events = CriticalEventPanel.QueryRecent(6); // ブロックする。専用スレッドなので OK
+            if (!_dragging)
+            {
+                try { Dispatcher.BeginInvoke(() => _eventPanel.SetEvents(events)); }
+                catch (InvalidOperationException) { }
+            }
+            for (int waited = 0; waited < 60_000 && !_stop; waited += 200)
                 Thread.Sleep(200);
         }
     }
