@@ -47,5 +47,6 @@ public sealed class SystemMonitor : IDisposable
         _cpu.Dispose();
         _disks.Dispose();
         _gpu.Dispose();
+        _procs.Dispose();
     }
 }

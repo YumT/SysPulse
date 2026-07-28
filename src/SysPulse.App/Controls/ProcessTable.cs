@@ -10,7 +10,7 @@ public sealed class ProcessTable : Grid
 {
     private static readonly (string Text, bool Left)[] Headers =
     [
-        ("プロセス", true), ("CPU %", false), ("メモリ %", false), ("ディスク", false), ("ネット", false),
+        ("プロセス", true), ("CPU %", false), ("メモリ %", false), ("ディスク", false), ("GPU %", false),
     ];
 
     private static readonly Brush PanelBrush = MetricRow.FreezeBrush("#1e1e1e");
@@ -21,6 +21,7 @@ public sealed class ProcessTable : Grid
     private readonly TextBlock[,] _cells;
 
     /// <summary>CPU 負荷上位プロセスの表(CPU 降順 8 行、Idle は Core 側で除外済み)。
+    /// 列は プロセス / CPU % / メモリ % / ディスク / GPU %(PDH GPU Engine を PID 毎に合算)。
     /// 右上をイベント監視と上下分割するため行間を詰めたコンパクト表示。</summary>
     public ProcessTable(int rows = 8)
     {
@@ -80,7 +81,7 @@ public sealed class ProcessTable : Grid
                 _cells[r, 1].Text = $"{p.Cpu:F1}";
                 _cells[r, 2].Text = p.Mem is double m ? $"{m:F1}" : "—";
                 _cells[r, 3].Text = p.Disk is double d ? $"{d:F1}" : "—";
-                _cells[r, 4].Text = "—"; // プロセス毎の通信量は OS API 非対応(PORTING.md)
+                _cells[r, 4].Text = p.Gpu is double g ? $"{g:F1}" : "—"; // PDH GPU Engine を PID 毎に合算
             }
             else
             {

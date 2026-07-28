@@ -53,6 +53,7 @@ public sealed class ProcSample
     [JsonPropertyName("cpu")] public double Cpu { get; set; }
     [JsonPropertyName("mem")] public double? Mem { get; set; }
     [JsonPropertyName("disk")] public double? Disk { get; set; }
+    [JsonPropertyName("gpu")] public double? Gpu { get; set; }
 }
 
 /// <summary>バックグラウンドで取得する遅いデバイス名群。</summary>

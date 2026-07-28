@@ -9,7 +9,8 @@
 - `src/SysPulse.Core` — 計測ライブラリ。UI 非依存。後の WPF アプリからもこれを参照する
   - `Metrics/` — CPU(GetSystemTimes + PDH)、メモリ(GlobalMemoryStatusEx)、
     ディスク(PDH `\PhysicalDisk(*)\% Disk Time`)、ネット(NIC バイトカウンタ差分)、
-    プロセス(TotalProcessorTime 差分 + GetProcessIoCounters)、GPU(NVML P/Invoke)
+    プロセス(TotalProcessorTime 差分 + GetProcessIoCounters +
+    PDH `\GPU Engine(*)\Utilization Percentage` を pid 毎に合算)、GPU 全体(NVML P/Invoke)
   - `Pdh/PdhQuery.cs` — PDH ラッパー。`PdhAddEnglishCounter` を使うため
     日本語 Windows でも英語カウンタ名が使える(PerformanceCounter クラスは不可)
   - `DeviceInfo/DeviceInfoProvider.cs` — WMI 系の遅いデバイス名取得。
