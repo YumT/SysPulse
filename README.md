@@ -4,6 +4,8 @@
 仕様の正典は Python 版の PORTING.md(旧ワークスペース
 `SysPulse タスクマネージャー開発/SysPulse_python3`)。**管理者権限不要**が最重要方針。
 
+![SysPulse の画面](screenshot.png)
+
 ## 構成
 
 - `src/SysPulse.Core` — 計測ライブラリ。UI 非依存。後の WPF アプリからもこれを参照する
