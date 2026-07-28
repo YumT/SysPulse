@@ -172,9 +172,9 @@ public partial class MainWindow : Window
         AddRow(tl, "gpu", "GPU", [CGpu], 100.0);
         AddRow(tl, "net", "イーサネット", [CDown, CUp], null, subLarge: true, subColor: CUp);
 
-        // 右上: プロセス表(上 2/3) + システムログイベント(下 1/3)
+        // 右上: プロセス表(上半分) + システムログイベント(下半分)
         var tr = MakeBlock(0, 1);
-        tr.RowDefinitions.Add(new RowDefinition { Height = new GridLength(2, GridUnitType.Star) });
+        tr.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         tr.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _procTable = new ProcessTable(rows: 8);
         Grid.SetRow(_procTable, 0);
@@ -296,7 +296,7 @@ public partial class MainWindow : Window
     {
         while (!_stop)
         {
-            var events = CriticalEventPanel.QueryRecent(3); // ブロックする。専用スレッドなので OK
+            var events = CriticalEventPanel.QueryRecent(4); // ブロックする。専用スレッドなので OK
             if (!_dragging)
             {
                 try { Dispatcher.BeginInvoke(() => _eventPanel.SetEvents(events)); }

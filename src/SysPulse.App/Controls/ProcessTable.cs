@@ -27,7 +27,7 @@ public sealed class ProcessTable : Grid
         Background = PanelBrush;
         Margin = new Thickness(0, 1, 0, 1);
 
-        var inner = new Grid { Margin = new Thickness(8, 1, 8, 1) };
+        var inner = new Grid { Margin = new Thickness(8, 0, 8, 0) };
         Children.Add(inner);
 
         inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 90 });
