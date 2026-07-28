@@ -65,10 +65,15 @@
   "disks": [
     { "number": 3, "label": "システム" },
     { "number": 4, "label": "ゲーム" }
-  ]
+  ],
+  "kimiApiKey": ""
 }
 ```
 
+- `kimiApiKey`: Kimi Code Console で発行する API キー(sk-...)。
+  AI Usage の Kimi 側認証で最優先に使われる(後述)。**git 管理外の実値は
+  `publish/config.json` とインストール先にだけ置く**こと(リポジトリの
+  `src/SysPulse.App/config.json` は空のテンプレート)
 - `disks` が空 → Online ディスクを番号順に最大 10 台自動検出
 - `disks` を指定 → その順・ラベルで先頭から固定表示。残りの枠は固定以外の
   Online ディスクを番号順に自動追加(USB メモリ等の抜き差しに追従)
@@ -96,8 +101,22 @@
 - **認証(読むだけ原則)**: 認証ファイルは読み取り専用で開き、絶対に書き込まない
   (書き込むと本家 CLI のログインが壊れる)
   - Claude: `~/.claude/.credentials.json` の accessToken → `api.anthropic.com/api/oauth/usage`
-  - Kimi: `~/.kimi-code/config.toml`(無ければ Kimi Work 同梱の config.toml)の
-    api_key / base_url → `{base_url}/usages` と `api.kimi.com/coding/v1/usages`
+  - Kimi: 認証は次の優先順で解決 → `api.kimi.com/coding/v1/usages` 等を叩く
+    1. `config.json` の `kimiApiKey`(Kimi Code Console で発行。**推奨**)
+    2. `~/.kimi-code/config.toml`(無ければ Kimi Work 同梱の config.toml)の
+       api_key / base_url(Kimi Work 時代の互換経路)
+    3. `~/.kimi-code/credentials/kimi-code.json` の access_token
+       (新 Kimi Code CLI の OAuth 認証。15 分で切れるため CLI 使用直後しか
+       有効でない。あくまでフォールバック)
+    ※ 新 Kimi Code CLI は OAuth 方式のため config.toml の api_key は空。
+    リフレッシュは本家 CLI に任せ、こちらからは行わない
+    (認証ファイルに書き込むと本家のログインが壊れる恐れがあるため)
+  - Kimi の **Total usage**(totalQuota)は agent-gw 系の base_url でしか返らず、
+    コンソールキー(scope: FEATURE_CODING)では取れない
+    (agent-gw を叩くと 403 api_key_path_forbidden)。
+    そのため 1 または 3 が主認証のときも、config.toml に旧キー(Kimi Work 時代、
+    scope: FEATURE_WORK)が残っていれば agent-gw を併せて叩き Total usage を補完する。
+    旧キー失効時は Total usage だけ自動的に非表示になる
 - **設定共有**: `%LOCALAPPDATA%\UsageWatcher\settings.json` を単体版 Watcher と共有
   (しきい値・ポーリング間隔・プロバイダ有効/無効)。ログも同じフォルダに出る
 - ※ 両プロバイダとも非公式 API。スキーマ変更時は UsageWatcher 側と合わせて直す

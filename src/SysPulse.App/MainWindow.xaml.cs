@@ -243,7 +243,7 @@ public partial class MainWindow : Window
         // AI Usage ポーリング(120秒周期 + 429 バックオフ。通信失敗時は直前値を保持)
         var providers = new List<IUsageProvider>();
         if (_usageSettings.EnableClaude) providers.Add(new ClaudeProvider());
-        if (_usageSettings.EnableKimi) providers.Add(new KimiProvider());
+        if (_usageSettings.EnableKimi) providers.Add(new KimiProvider(_config.KimiApiKey));
         foreach (var p in providers) _usagePanel.RegisterProvider(p.Id);
         _usagePoller = new UsagePoller(providers, _usageSettings);
         _usagePoller.SnapshotUpdated += snap =>

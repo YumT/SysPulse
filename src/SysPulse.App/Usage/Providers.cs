@@ -136,15 +136,33 @@ public sealed class ClaudeProvider : IUsageProvider
 
 /// <summary>
 /// Kimi Code (Kimi メンバーシップ) の使用量。
-/// GET {base_url}/usages  （実測: https://agent-gw.kimi.com/coding/v1/usages → 200）
-/// 認証: kimi-code config.toml の [providers.*] type="kimi" → api_key / base_url（読むだけ）
-/// レスポンス: totalQuota { limit, used, remaining, resetTime(UTC) }
+/// GET {base_url}/usages  （実測: https://api.kimi.com/coding/v1/usages → 200）
+/// 認証(読むだけ原則)の優先順:
+///   1. SysPulse の config.json の kimiApiKey(Kimi Code Console で発行する API キー)
+///   2. kimi-code config.toml の [providers.*] → api_key / base_url(Kimi Work 同梱ランタイム互換)
+///   3. ~/.kimi-code/credentials/kimi-code.json の access_token
+///      (新 Kimi Code CLI の OAuth 認証。15 分で切れるため CLI 使用直後しか有効でない。
+///       あくまでフォールバック)
+/// なお Total usage(totalQuota)は agent-gw 系の base_url でしか返らず、コンソールキー
+/// (scope: FEATURE_CODING)では取れない。そのため 1 または 3 が主認証のときも、
+/// config.toml に旧キーが残っていれば agent-gw を併せて叩き Total usage を補完する。
+/// レスポンス: usage / limits[] / totalQuota { limit, used, remaining, resetTime(UTC) }
 /// ※ 非公式API。CLI の /usage と同じ経路。スキーマ変更時は --debug で確認。
 /// </summary>
 public sealed class KimiProvider : IUsageProvider
 {
     public string Id => "kimi";
     public string DisplayName => "Kimi";
+
+    const string PublicBaseUrl = "https://api.kimi.com/coding/v1";
+
+    readonly string? _configApiKey;
+
+    /// <summary>configApiKey: SysPulse の config.json の kimiApiKey(あれば最優先)。</summary>
+    public KimiProvider(string? configApiKey = null)
+    {
+        _configApiKey = string.IsNullOrWhiteSpace(configApiKey) ? null : configApiKey.Trim();
+    }
 
     static string[] CandidateConfigPaths() =>
     [
@@ -160,47 +178,77 @@ public sealed class KimiProvider : IUsageProvider
     {
         var snap = new UsageSnapshot { ProviderId = Id, DisplayName = DisplayName };
 
-        var path = CandidateConfigPaths().FirstOrDefault(File.Exists);
-        if (path == null)
+        // 認証の解決(優先順はクラスコメント参照)
+        string? token = null, baseUrl = null;
+        var authSource = "";
+        if (_configApiKey != null)
         {
-            snap.AuthMessage = "Kimi Code が見つかりません（kimi で /login してください）";
-            return snap;
+            token = _configApiKey;
+            baseUrl = PublicBaseUrl;
+            authSource = "config";
+        }
+        else
+        {
+            if (TryReadTomlCredential(out var tomlKey, out var tomlUrl, out var tomlError))
+            {
+                token = tomlKey;
+                baseUrl = tomlUrl;
+                authSource = "toml";
+            }
+            else if (tomlError != null)
+            {
+                snap.Error = "設定ファイルの読み取りに失敗: " + tomlError;
+                return snap;
+            }
+            else
+            {
+                token = ReadOAuthAccessToken();
+                if (token != null)
+                {
+                    baseUrl = PublicBaseUrl;
+                    authSource = "oauth";
+                }
+            }
         }
 
-        string? apiKey, baseUrl;
-        try
+        if (token == null || baseUrl == null)
         {
-            (apiKey, baseUrl) = ParseKimiConfig(await File.ReadAllLinesAsync(path, ct));
-        }
-        catch (Exception ex)
-        {
-            snap.Error = "設定ファイルの読み取りに失敗: " + ex.Message;
-            return snap;
-        }
-
-        if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(baseUrl))
-        {
-            snap.AuthMessage = "Kimi の API キーが見つかりません（kimi で /login してください）";
+            snap.AuthMessage = "Kimi の API キーが見つかりません"
+                + "（config.json に kimiApiKey を設定するか、kimi で /login してください）";
             return snap;
         }
 
         // 取得先は2系統（実測済み）:
         //  - {設定の base_url}/usages      … Kimi Work 同梱の agent-gw は totalQuota（Total usage）だけ返す
         //  - https://api.kimi.com/coding/v1/usages … 公式ホスト。usage（7-day）と limits[300分窓]（5-hour）が返る
+        // コンソールキー(scope: FEATURE_CODING)は agent-gw を叩けず(403 api_key_path_forbidden)、
+        // 旧 toml キー(scope: FEATURE_WORK)は totalQuota だけ返す。両方あれば併用して全ゲージを埋める。
         var primaryUrl = baseUrl.TrimEnd('/') + "/usages";
-        const string publicUrl = "https://api.kimi.com/coding/v1/usages";
-        var urls = new List<string> { primaryUrl };
-        if (!primaryUrl.Equals(publicUrl, StringComparison.OrdinalIgnoreCase)) urls.Add(publicUrl);
+        var publicUrl = PublicBaseUrl + "/usages";
+        var endpoints = new List<(string Url, string Token)> { (primaryUrl, token) };
+        if (!primaryUrl.Equals(publicUrl, StringComparison.OrdinalIgnoreCase))
+            endpoints.Add((publicUrl, token));
+
+        // Total usage 補完: 主認証が旧 toml キーでなくても、toml に有効なキーが
+        // 残っていれば agent-gw も追加で叩く(失効していれば Total usage が出ないだけ)
+        if (authSource != "toml" &&
+            TryReadTomlCredential(out var supKey, out var supUrl, out _) &&
+            supKey != token)
+        {
+            var agentUrl = supUrl!.TrimEnd('/') + "/usages";
+            if (endpoints.All(e => !e.Url.Equals(agentUrl, StringComparison.OrdinalIgnoreCase)))
+                endpoints.Add((agentUrl, supKey!));
+        }
 
         var gotAny = false;
         Exception? primaryError = null;
-        foreach (var url in urls)
+        foreach (var (url, epToken) in endpoints)
         {
             var isPrimary = url == primaryUrl;
             try
             {
                 using var req = new HttpRequestMessage(HttpMethod.Get, url);
-                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", epToken);
                 req.Headers.TryAddWithoutValidation("User-Agent", "usage-watcher/1.0");
                 using var res = await http.SendAsync(req, ct);
 
@@ -208,7 +256,15 @@ public sealed class KimiProvider : IUsageProvider
                 {
                     if (isPrimary)
                     {
-                        snap.AuthMessage = "Kimi の API キーが無効です（kimi で /login し直してください）";
+                        snap.AuthMessage = authSource switch
+                        {
+                            "config" => "config.json の kimiApiKey が無効です"
+                                + "（Kimi Code Console でキーを確認してください）",
+                            "oauth" => "Kimi のアクセストークンが期限切れです"
+                                + "（kimi CLI を一度使うと更新されます。恒久的には config.json に"
+                                + " kimiApiKey を設定してください）",
+                            _ => "Kimi の API キーが無効です（kimi で /login し直してください）",
+                        };
                         return snap;
                     }
                     continue; // 補助側の失敗は無視（取れるものだけ表示）
@@ -327,6 +383,58 @@ public sealed class KimiProvider : IUsageProvider
             double.TryParse(v.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
             return d;
         return 0;
+    }
+
+    /// <summary>kimi-code config.toml(Kimi Code CLI ユーザ設定 or Kimi Work 同梱)から
+    /// api_key / base_url を読む。新 Kimi Code CLI は OAuth 方式で api_key が空のため、
+    /// 値があるとき(Kimi Work 同梱ランタイム等)だけ true を返す。
+    /// readError には読み取り例外のメッセージを返す(ファイル無し・キー空はエラー扱いしない)。</summary>
+    static bool TryReadTomlCredential(out string? apiKey, out string? baseUrl, out string? readError)
+    {
+        apiKey = baseUrl = readError = null;
+        // 候補を順に見て、api_key が実際に入っている最初の config.toml を採用する。
+        // (先頭の ~/.kimi-code/config.toml は新 CLI の OAuth 方式で api_key が空。
+        //  Kimi Work 同梱側に有効なキーが残っていることがある)
+        foreach (var path in CandidateConfigPaths())
+        {
+            if (!File.Exists(path)) continue;
+            try
+            {
+                var (k, u) = ParseKimiConfig(File.ReadAllLines(path));
+                if (string.IsNullOrEmpty(k) || string.IsNullOrEmpty(u)) continue;
+                apiKey = k;
+                baseUrl = u;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                readError = ex.Message;
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>~/.kimi-code/credentials/kimi-code.json の access_token を読む(OAuth フォールバック)。
+    /// 新 Kimi Code CLI の OAuth 認証ファイル。有効期限は 15 分で、kimi CLI が使われるたびに更新される。
+    /// 読み取り専用。書き込みは本家 CLI のログインを壊す恐れがあるため絶対にしない。</summary>
+    static string? ReadOAuthAccessToken()
+    {
+        try
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".kimi-code", "credentials", "kimi-code.json");
+            if (!File.Exists(path)) return null;
+            using var json = JsonDocument.Parse(File.ReadAllText(path));
+            if (json.RootElement.TryGetProperty("access_token", out var t) &&
+                t.ValueKind == JsonValueKind.String)
+                return t.GetString();
+        }
+        catch
+        {
+            // フォールバックなので失敗しても黙って次へ
+        }
+        return null;
     }
 
     /// <summary>

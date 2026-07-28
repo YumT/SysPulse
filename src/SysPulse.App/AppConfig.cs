@@ -14,6 +14,8 @@ public sealed class AppConfig
     [JsonPropertyName("intervalMs")] public int IntervalMs { get; set; } = 1000;
     [JsonPropertyName("namesRefreshSec")] public int NamesRefreshSec { get; set; } = 30;
     [JsonPropertyName("disks")] public List<DiskEntry> Disks { get; set; } = new();
+    /// <summary>Kimi Code Console で発行する API キー(sk-...)。AI Usage の Kimi 側認証で最優先。</summary>
+    [JsonPropertyName("kimiApiKey")] public string KimiApiKey { get; set; } = "";
 
     public sealed class DiskEntry
     {
