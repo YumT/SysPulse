@@ -1,7 +1,8 @@
 # SysPulse (C# 移植版)
 
-タスクマネージャー風システムモニター。Python 版(`../SysPulse_python3`)の C# 再実装。
-仕様の正典は `../SysPulse_python3/PORTING.md`。**管理者権限不要**が最重要方針。
+タスクマネージャー風システムモニター。Python 版の C# 再実装。
+仕様の正典は Python 版の PORTING.md(旧ワークスペース
+`SysPulse タスクマネージャー開発/SysPulse_python3`)。**管理者権限不要**が最重要方針。
 
 ## 構成
 
@@ -20,7 +21,19 @@
   ドラッグ/リサイズ中は描画停止)。実行時は `SysPulse.exe`
   - `Controls/Sparkline.cs` — 履歴 120 サンプル右詰め、塗りつぶし→線の 2 パス描画
   - `Controls/MetricRow.cs` / `Controls/ProcessTable.cs` — メトリクス行 / プロセス表
+  - `Controls/DiskRow.cs` — ディスク行(グラフなしのコンパクト 1 行表示)
+  - `Controls/UsagePanel.cs` — AI Usage ゲージ(右下パネル。後述)
+  - `Usage/` — UsageWatcher から移植した AI 使用量取得(Providers/Poller/Settings/Log)
   - `config.json` — PC 固有設定(下記)
+
+## レイアウト
+
+```
+左上: CPU / メモリ / GPU / イーサネット(負荷・速度・スパークライン)
+右上: CPU 負荷上位プロセス(CPU降順、メモリ・ディスク I/O 付き)
+左下: ディスク(全台。グラフなしのコンパクト行)
+右下: AI Usage(Claude / Kimi の使用量ゲージ)
+```
 
 ## 設定(config.json)・状態(window-state.json)
 
@@ -42,8 +55,30 @@
 - `disks` が空 → Online ディスクを番号順に最大 10 台自動検出
 - `disks` を指定 → その順・ラベルで先頭から固定表示。残りの枠は固定以外の
   Online ディスクを番号順に自動追加(USB メモリ等の抜き差しに追従)
-- 配置は左・右・左・右の交互(最大 5 行 x 2 列)。奇数の場合は右側の最後の行が空く
+- 配置は全台を左下ブロックに縦並び(表示名/デバイス名/使用率/実速度の 1 行。
+  グラフは表示しない)。表示台数の決定ロジックは従来どおり
 - ディスクの増減は `namesRefreshSec` 周期(既定 30 秒)で検出して行を作り直す
+
+## AI Usage(UsageWatcher 統合)
+
+右下パネルに Claude / Kimi の AI 使用量ゲージを表示する
+(KimiCreditWatcher の UsageWatcher から移植。単体版と同等の取得仕様)。
+
+- **表示**: プロバイダ毎にゲージ(ラベル+% / バー / リセット時刻+カウントダウン)
+  - Claude: Current session / All models
+  - Kimi: 5-hour usage / 7-day usage / Total usage(取れるものだけ表示)
+- **色分け**: 50% 未満=緑、50% 以上=橙、80% 以上=赤(しきい値は設定で変更可)
+- **ポーリング**: 120 秒周期(下限 30 秒)をプロバイダ毎にバックグラウンドで実行。
+  HTTP 429 は Retry-After(最低 300 秒)でバックオフ。
+  通信失敗時は直前の値に「通信失敗のため直前値を表示中」を添えて継続表示
+- **認証(読むだけ原則)**: 認証ファイルは読み取り専用で開き、絶対に書き込まない
+  (書き込むと本家 CLI のログインが壊れる)
+  - Claude: `~/.claude/.credentials.json` の accessToken → `api.anthropic.com/api/oauth/usage`
+  - Kimi: `~/.kimi-code/config.toml`(無ければ Kimi Work 同梱の config.toml)の
+    api_key / base_url → `{base_url}/usages` と `api.kimi.com/coding/v1/usages`
+- **設定共有**: `%LOCALAPPDATA%\UsageWatcher\settings.json` を単体版 Watcher と共有
+  (しきい値・ポーリング間隔・プロバイダ有効/無効)。ログも同じフォルダに出る
+- ※ 両プロバイダとも非公式 API。スキーマ変更時は UsageWatcher 側と合わせて直す
 
 ## 常駐動作(タスクトレイ)
 

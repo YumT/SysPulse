@@ -31,22 +31,8 @@ public sealed class UsagePanel : Grid
     {
         _settings = settings;
 
-        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-        var header = new TextBlock
-        {
-            Text = "AI Usage",
-            Foreground = FgBrush,
-            FontSize = 12,
-            FontWeight = FontWeights.Bold,
-            Margin = new Thickness(8, 4, 8, 2),
-        };
-        Grid.SetRow(header, 0);
-        Children.Add(header);
-
+        // ヘッダー行は持たない(下段の高さを節約するため)。ゲージ群を直接並べる
         _body = new StackPanel();
-        Grid.SetRow(_body, 1);
         Children.Add(_body);
 
         _placeholder = new TextBlock
