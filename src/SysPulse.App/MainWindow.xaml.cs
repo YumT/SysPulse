@@ -386,11 +386,13 @@ public partial class MainWindow : Window
         _diskRows.Clear();
         _diskOrder = desired;
 
-        // 2 列 x 5 行(最大 10 台)。行は台数に関わらず常に 5 行確保し
-        // セル高を揃える(空き行は下に余る)。配置は左・右・左・右の順
+        // 2 列 x 最大 5 行(最大 10 台)。配置は左・右・左・右の順。
+        // 行は常に 4 行以上確保してセル高を保つ(8 台以下なら 1/4、
+        // 9 台以上で 5 行=1/5 に縮む。空き行は下に余る)
         _bl.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         _bl.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        for (int r = 0; r < MaxDisks / 2; r++)
+        int rowCount = Math.Max(4, (desired.Count + 1) / 2);
+        for (int r = 0; r < rowCount; r++)
             _bl.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         for (int i = 0; i < desired.Count; i++)
         {
