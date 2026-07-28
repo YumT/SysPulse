@@ -60,7 +60,7 @@ public sealed class DiskRow : Grid
         // グラフに紛れないよう、数値の背後には半透明の暗いプレートを敷く
         var overlay = new Border
         {
-            Background = MetricRow.FreezeBrush("#D9141414"),
+            Background = MetricRow.FreezeBrush("#B3141414"),
             CornerRadius = new CornerRadius(3),
             Padding = new Thickness(4, 0, 4, 0),
             VerticalAlignment = VerticalAlignment.Center,
