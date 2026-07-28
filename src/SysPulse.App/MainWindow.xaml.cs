@@ -2,7 +2,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using SysPulse.App.Controls;
+using SysPulse.App.Usage;
 using SysPulse.Core;
 using SysPulse.Core.Models;
 using WpfColor = System.Windows.Media.Color;
@@ -10,7 +12,9 @@ using WpfColor = System.Windows.Media.Color;
 namespace SysPulse.App;
 
 /// <summary>
-/// 2x2 レイアウトの常駐モニター(Python 版 App クラスの移植)。
+/// 2x2 レイアウトの常駐モニター。
+/// 左上: CPU/メモリ/GPU/イーサネット / 右上: プロセス表
+/// 左下: ディスク(全台・グラフなし) / 右下: AI Usage(UsageWatcher 統合)
 /// 計測はバックグラウンドスレッド、描画は UI スレッド。
 /// ドラッグ/リサイズ中は WM_ENTERSIZEMOVE/EXITSIZEMOVE で検出して描画を止める。
 /// </summary>
@@ -25,15 +29,17 @@ public partial class MainWindow : Window
     private static readonly WpfColor CGpu = Sparkline.Hex("#ef5350");
     private static readonly WpfColor CDown = Sparkline.Hex("#81c784");
     private static readonly WpfColor CUp = Sparkline.Hex("#fdd835");
-    private static readonly WpfColor CDisk = Sparkline.Hex("#90a4ae");
 
     private readonly SystemMonitor _monitor = new();
     private readonly AppConfig _config;
     private readonly Dictionary<string, MetricRow> _rows = new();
-    private readonly Dictionary<int, MetricRow> _diskRows = new();
+    private readonly Dictionary<int, DiskRow> _diskRows = new();
     private ProcessTable _procTable = null!;
     private Grid _bl = null!;
-    private Grid _br = null!;
+    private UsagePanel _usagePanel = null!;
+    private Usage.Settings _usageSettings = null!;
+    private UsagePoller? _usagePoller;
+    private DispatcherTimer? _usageTick;
     private TextBlock _diskPlaceholder = null!;
 
     private volatile bool _stop;
@@ -78,6 +84,8 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _stop = true;
+            _usageTick?.Stop();
+            _usagePoller?.Dispose();
             _tray?.Dispose();
             _showEvent?.Dispose();
             _monitor.Dispose();
@@ -165,9 +173,8 @@ public partial class MainWindow : Window
         _procTable = new ProcessTable(rows: 8);
         tr.Children.Add(_procTable);
 
-        // 左下・右下: ディスク(行は Online 判定の結果が来てから構築)
+        // 左下: ディスク(行は Online 判定の結果が来てから構築。全台ここに・グラフなし)
         _bl = MakeBlock(1, 0);
-        _br = MakeBlock(1, 1);
         _diskPlaceholder = new TextBlock
         {
             Text = "ディスク情報を取得中…",
@@ -178,6 +185,12 @@ public partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Top,
         };
         _bl.Children.Add(_diskPlaceholder);
+
+        // 右下: AI Usage(UsageWatcher 統合)
+        var br = MakeBlock(1, 1);
+        _usageSettings = Usage.Settings.Load();
+        _usagePanel = new UsagePanel(_usageSettings);
+        br.Children.Add(_usagePanel);
     }
 
     private Grid MakeBlock(int row, int col)
@@ -211,6 +224,24 @@ public partial class MainWindow : Window
         _samplerThread.Start();
         _namesThread = new Thread(NamesLoop) { IsBackground = true, Name = "SysPulse.Names" };
         _namesThread.Start();
+
+        // AI Usage ポーリング(120秒周期 + 429 バックオフ。通信失敗時は直前値を保持)
+        var providers = new List<IUsageProvider>();
+        if (_usageSettings.EnableClaude) providers.Add(new ClaudeProvider());
+        if (_usageSettings.EnableKimi) providers.Add(new KimiProvider());
+        foreach (var p in providers) _usagePanel.RegisterProvider(p.Id);
+        _usagePoller = new UsagePoller(providers, _usageSettings);
+        _usagePoller.SnapshotUpdated += snap =>
+        {
+            try { Dispatcher.BeginInvoke(() => _usagePanel.UpdateSnapshot(snap)); }
+            catch (InvalidOperationException) { /* 終了中 */ }
+        };
+        _usagePoller.Start();
+
+        // リセットまでのカウントダウン表示の定期更新
+        _usageTick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _usageTick.Tick += (_, _) => _usagePanel.Tick();
+        _usageTick.Start();
     }
 
     private void SampleLoop()
@@ -281,9 +312,9 @@ public partial class MainWindow : Window
         foreach (var (num, row) in _diskRows)
         {
             if (snap.Disks.TryGetValue(num, out var ds))
-                row.Set(FmtPct(ds.Busy), ds.Mbps is double m ? $"{m:F1} MB/s" : "", ds.Busy);
+                row.Set(FmtPct(ds.Busy), ds.Mbps is double m ? $"{m:F1} MB/s" : "");
             else
-                row.Set("—", "", (double?)null);
+                row.Set("—", "");
         }
 
         _procTable.SetRows(snap.Processes);
@@ -308,8 +339,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// ディスク行の構築(最大 10 台)。配置は左・右・左・右の交互で、
-    /// 奇数の場合は右側の最後の行が空く。
+    /// ディスク行の構築(最大 10 台)。全台を左下ブロックに縦並びで配置する
+    /// (グラフなしのコンパクト行。表示台数は従来どおり)。
     /// config に固定割り当てがあればそれを先頭に使い、残りは Online ディスクを
     /// 番号順に自動追加。抜き差し(増減)があれば行を作り直す。
     /// 固定割り当てがなければ Online ディスクを番号順に最大 10 台自動検出。
@@ -349,30 +380,21 @@ public partial class MainWindow : Window
         _disksBuilt = true;
         _diskPlaceholder.Visibility = Visibility.Collapsed;
         _bl.Children.Clear();
-        _br.Children.Clear();
         _bl.RowDefinitions.Clear();
-        _br.RowDefinitions.Clear();
         _diskRows.Clear();
         _diskOrder = desired;
 
-        // 両ブロックに同じ行数(N)を確保し、左右の行の高さを揃える
-        int rowsPerBlock = Math.Max(1, (desired.Count + 1) / 2);
-        for (int r = 0; r < rowsPerBlock; r++)
-        {
-            _bl.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            _br.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        }
         for (int i = 0; i < desired.Count; i++)
         {
-            var block = i % 2 == 0 ? _bl : _br; // 左・右・左・右…
+            _bl.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var (num, label) = desired[i];
-            AddDiskRow(block, i / 2, num, label, models.GetValueOrDefault(num, ""));
+            AddDiskRow(_bl, i, num, label, models.GetValueOrDefault(num, ""));
         }
     }
 
     private void AddDiskRow(Grid block, int rowIndex, int number, string label, string model)
     {
-        var row = new MetricRow(label, [CDisk], 100.0, model);
+        var row = new DiskRow(label, model);
         Grid.SetRow(row, rowIndex);
         block.Children.Add(row);
         _diskRows[number] = row;
