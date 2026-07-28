@@ -80,8 +80,9 @@
 - `disks` が空 → Online ディスクをドライブレター順に最大 10 台自動検出。
   表示名はドライブレター+ボリュームラベル("C:システム"、複数パーティションの
   物理ディスクは "C:システム F:データ" で並びは先頭レター基準)。
-  その下の 2 行目に空き/総量+空き率("833/930GB 90%"。複数パーティションは
-  合算。MSFT_Volume で取得、失敗時は Win32_LogicalDisk)を表示し、
+  その下の 2 行目に空き/総量+空き率("833GB/930GB 89%"。1TB 以上の値は
+  "46GB/1.82TB" のように TB 表記(10TB 以上は小数 1 桁、それ未満は小数 2 桁)。
+  複数パーティションは合算。MSFT_Volume で取得、失敗時は Win32_LogicalDisk)を表示し、
   セルから溢れた分はクリップして隠す。空き率 10% 未満は橙気味の色で警告する。
   レターが 1 つも取れないディスクは従来の「ディスク N」表記にフォールバックし、
   並びも最後尾(番号順)になる
@@ -202,10 +203,10 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 初回サンプルはレート系(CPU/ネット/ディスク)が計算できないため内部で捨て、
 1 秒後の 2 回目を出力する。
 
-## この PC での検証結果(2026-07-28)
+## 実機での検証結果(2026-07-28)
 
-- CPU 名 / 定格クロック / メモリ構成(DDR4-2667 8GB+16GB)/ NIC 名 / ディスクモデルを正しく取得
-- GPU は Radeon Vega 内蔵のため NVML 非対応 → PDH GPU Engine 合算にフォールバックし
+- CPU 名 / 定格クロック / メモリ構成 / NIC 名 / ディスクモデルを正しく取得
+- GPU は NVML 非対応の内蔵 GPU の環境で PDH GPU Engine 合算にフォールバックし
   負荷を表示(温度は NVML のみのため非表示)
 - MSFT_Disk の Online 判定で切断済みディスクを除外
 - GUI 常駐計測(Release): **CPU 約 0.3〜0.6%**(typeperf 全コア合計の 2.3〜4.7% ÷ 8 スレッド)、
@@ -215,7 +216,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 「権限不要」方針での温度取得は**不可**と確定。試した全経路と結果:
 
-- CPU 温度: WMI `MSAcpi_ThermalZoneTemperature` → この PC は Not supported
+- CPU 温度: WMI `MSAcpi_ThermalZoneTemperature` → 検証機は Not supported
 - ディスク温度(WMI): `MSFT_StorageReliabilityCounter` / `MSStorageDriver_FailurePredictData`
   → どちらも Access denied(要管理者)
 - ディスク温度(NVMe PoC): `IOCTL_STORAGE_QUERY_PROPERTY` の全バリエーション

@@ -31,8 +31,9 @@ public sealed class DiskRow : Grid
 
         var inner = new Grid { Margin = new Thickness(6, 2, 6, 2), ClipToBounds = true };
         Children.Add(inner);
-        inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        // 左(テキスト 3 行):右(スパークライン) = 3:2(グラフ幅は従来の 80%)
+        inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) });
+        inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
 
         // 左半分: 1 行目=表示名(太字。レター右は 3px、2 つ目以降のレターは左 5px)、
         // 2 行目=空き/総量+空き率、3 行目=デバイス名
@@ -129,8 +130,8 @@ public sealed class DiskRow : Grid
         _deviceLabel.Text = device;
     }
 
-    /// <summary>容量の表示("833/930GB 90%" = 空き/総量+空き率)。取れないときは空文字。
-    /// warn=true(残量僅少)のときは橙気味の色にする。</summary>
+    /// <summary>容量の表示("833GB/930GB 89%" = 空き/総量+空き率。1TB 以上は小数 2 桁の TB)。
+    /// 取れないときは空文字。warn=true(残量僅少)のときは橙気味の色にする。</summary>
     public void SetSpace(string space, bool warn = false)
     {
         _spaceLabel.Text = space;

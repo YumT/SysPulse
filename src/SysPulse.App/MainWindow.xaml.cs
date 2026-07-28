@@ -467,15 +467,21 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>容量の表示("833/930GB 90%" = 空き/総量+空き率)と残量僅少フラグ。
-    /// 取れないときは空文字。空き率 10% 未満で warn=true(橙表示)にする。</summary>
+    /// <summary>容量の表示("833GB/930GB 89%" / "46GB/1.82TB 2%" = 空き/総量+空き率)と
+    /// 残量僅少フラグ。取れないときは空文字。1TB 以上の値は小数 2 桁の TB 表記。
+    /// 空き率 10% 未満で warn=true(橙表示)にする。</summary>
     private static (string Text, bool Warn) FmtSpace(IReadOnlyDictionary<int, DiskSpaceInfo> spaces, int num)
     {
         if (!spaces.TryGetValue(num, out var s) || s.TotalGb <= 0)
             return ("", false);
         double pct = s.FreeGb / s.TotalGb * 100.0;
-        return ($"{s.FreeGb:F0}/{s.TotalGb:F0}GB {pct:F0}%", pct < 10.0);
+        return ($"{FmtCap(s.FreeGb)}/{FmtCap(s.TotalGb)} {pct:F0}%", pct < 10.0);
     }
+
+    /// <summary>1TB 以上は TB 表記(10TB 以上は小数 1 桁、それ未満は小数 2 桁)、1TB 未満は整数 GB。</summary>
+    private static string FmtCap(double gb) =>
+        gb >= 10240.0 ? $"{gb / 1024.0:F1}TB" :
+        gb >= 1024.0 ? $"{gb / 1024.0:F2}TB" : $"{gb:F0}GB";
 
     private DiskRow AddDiskRow(Grid block, int rowIndex, int column, int number,
         List<(string Letter, string VolLabel)> nameParts, string model)
