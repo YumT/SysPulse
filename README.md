@@ -24,7 +24,7 @@
   - `Controls/MetricRow.cs` / `Controls/ProcessTable.cs` — メトリクス行 / プロセス表
   - `Controls/DiskRow.cs` — ディスクセル(2 列 x 5 行。背景スパークライン+2 行表示)
   - `Controls/UsagePanel.cs` — AI Usage ゲージ(右下パネル。後述)
-  - `Controls/CriticalEventPanel.cs` — システムログ「重大」イベント監視(右上 2/3)
+  - `Controls/CriticalEventPanel.cs` — システムログイベント監視(右上 2/3。レベル別タブ)
   - `Usage/` — UsageWatcher から移植した AI 使用量取得(Providers/Poller/Settings/Log)
   - `config.json` — PC 固有設定(下記)
 
@@ -42,13 +42,14 @@
 右上エリアの下半分で、イベントビューアーのシステムログを監視する
 (60 秒周期のポーリング)。
 
-- `EventLogQuery("System", ...)` を新しい順に直近 4 件表示
+- 重大 / エラー / 警告 / 情報の 4 タブで出し分け。選択中レベルの
+  `EventLogQuery("System", ...)` を新しい順に直近 4 件表示
   (1 行目=日時+ソース+ID、2 行目=メッセージ先頭行。レベルで色分け:
   重大=赤 / エラー=橙 / 警告=黄 / 情報=グレー)
+- 重大・エラー・警告のタブには 24 時間以内の件数を併記する
+  (`TimeCreated[timediff(@SystemTime) <= 86400000]` で集計。情報は集計しない)
 - System ログは標準ユーザーで読めるため**管理者権限不要**(Security ログは不可)
-- 0 件のときは「重大イベントなし」、取得失敗時は注記を表示
-- ※ 表示確認のため現在は重大以外(Level 2〜4)も含む XPath にしている。
-  最終形は `*[System[(Level=1)]]`(重大のみ)に戻す
+- 0 件のときは「<レベル名>イベントなし」、取得失敗時は注記を表示
 
 ## 設定(config.json)・状態(window-state.json)
 

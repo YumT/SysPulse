@@ -291,15 +291,15 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>システムログの「重大」イベントを 60 秒周期で確認する。</summary>
+    /// <summary>システムログのイベント(全レベル)を 60 秒周期で確認する。</summary>
     private void EventsLoop()
     {
         while (!_stop)
         {
-            var events = CriticalEventPanel.QueryRecent(4); // ブロックする。専用スレッドなので OK
+            var data = CriticalEventPanel.QueryAll(4); // ブロックする。専用スレッドなので OK
             if (!_dragging)
             {
-                try { Dispatcher.BeginInvoke(() => _eventPanel.SetEvents(events)); }
+                try { Dispatcher.BeginInvoke(() => _eventPanel.SetData(data)); }
                 catch (InvalidOperationException) { }
             }
             for (int waited = 0; waited < 60_000 && !_stop; waited += 200)
