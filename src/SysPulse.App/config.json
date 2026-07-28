@@ -1,0 +1,5 @@
+{
+  "intervalMs": 1000,
+  "namesRefreshSec": 30,
+  "disks": []
+}
