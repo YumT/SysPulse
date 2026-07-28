@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     private static readonly WpfColor CGpu = Sparkline.Hex("#ef5350");
     private static readonly WpfColor CDown = Sparkline.Hex("#81c784");
     private static readonly WpfColor CUp = Sparkline.Hex("#fdd835");
+    private static readonly WpfColor CDisk = Sparkline.Hex("#90a4ae");
 
     private readonly SystemMonitor _monitor = new();
     private readonly AppConfig _config;
@@ -173,7 +174,7 @@ public partial class MainWindow : Window
         _procTable = new ProcessTable(rows: 8);
         tr.Children.Add(_procTable);
 
-        // 左下: ディスク(行は Online 判定の結果が来てから構築。全台ここに・グラフなし)
+        // 左下: ディスク(2 列 x 5 行。行は Online 判定の結果が来てから構築)
         _bl = MakeBlock(1, 0);
         _diskPlaceholder = new TextBlock
         {
@@ -312,9 +313,9 @@ public partial class MainWindow : Window
         foreach (var (num, row) in _diskRows)
         {
             if (snap.Disks.TryGetValue(num, out var ds))
-                row.Set(FmtPct(ds.Busy), ds.Mbps is double m ? $"{m:F1} MB/s" : "");
+                row.Set(FmtPct(ds.Busy), ds.Mbps is double m ? $"{m:F1} MB/s" : "", ds.Busy);
             else
-                row.Set("—", "");
+                row.Set("—", "", (double?)null);
         }
 
         _procTable.SetRows(snap.Processes);
@@ -339,8 +340,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// ディスク行の構築(最大 10 台)。全台を左下ブロックに縦並びで配置する
-    /// (グラフなしのコンパクト行。表示台数は従来どおり)。
+    /// ディスク行の構築(最大 10 台)。左下ブロックを 2 列 x 5 行で使い、
+    /// 左・右・左・右の順に詰める(セルは背景スパークライン付きの 2 行表示)。
     /// config に固定割り当てがあればそれを先頭に使い、残りは Online ディスクを
     /// 番号順に自動追加。抜き差し(増減)があれば行を作り直す。
     /// 固定割り当てがなければ Online ディスクを番号順に最大 10 台自動検出。
@@ -381,21 +382,28 @@ public partial class MainWindow : Window
         _diskPlaceholder.Visibility = Visibility.Collapsed;
         _bl.Children.Clear();
         _bl.RowDefinitions.Clear();
+        _bl.ColumnDefinitions.Clear();
         _diskRows.Clear();
         _diskOrder = desired;
 
+        // 2 列 x 5 行(最大 10 台)。行は台数に関わらず常に 5 行確保し
+        // セル高を揃える(空き行は下に余る)。配置は左・右・左・右の順
+        _bl.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _bl.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        for (int r = 0; r < MaxDisks / 2; r++)
+            _bl.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         for (int i = 0; i < desired.Count; i++)
         {
-            _bl.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var (num, label) = desired[i];
-            AddDiskRow(_bl, i, num, label, models.GetValueOrDefault(num, ""));
+            AddDiskRow(_bl, i / 2, i % 2, num, label, models.GetValueOrDefault(num, ""));
         }
     }
 
-    private void AddDiskRow(Grid block, int rowIndex, int number, string label, string model)
+    private void AddDiskRow(Grid block, int rowIndex, int column, int number, string label, string model)
     {
-        var row = new DiskRow(label, model);
+        var row = new DiskRow(label, CDisk, model);
         Grid.SetRow(row, rowIndex);
+        Grid.SetColumn(row, column);
         block.Children.Add(row);
         _diskRows[number] = row;
     }
