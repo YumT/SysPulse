@@ -26,6 +26,7 @@
   - `Controls/UsagePanel.cs` — AI Usage ゲージ(右下パネル。後述)
   - `Controls/CriticalEventPanel.cs` — システムログイベント監視(右上 2/3。レベル別タブ)
   - `Usage/` — UsageWatcher から移植した AI 使用量取得(Providers/Poller/Settings/Log)
+  - `ExternalTools.cs` — 右クリックメニューから開く外部ツール(後述)
   - `config.json` — PC 固有設定(下記)
 
 ## レイアウト
@@ -100,6 +101,18 @@
 - **設定共有**: `%LOCALAPPDATA%\UsageWatcher\settings.json` を単体版 Watcher と共有
   (しきい値・ポーリング間隔・プロバイダ有効/無効)。ログも同じフォルダに出る
 - ※ 両プロバイダとも非公式 API。スキーマ変更時は UsageWatcher 側と合わせて直す
+
+## 右クリックメニュー(外部ツール起動)
+
+ウィンドウ上のどこでも右クリックすると、関連する Windows の画面を開ける
+(すべて管理者権限不要。`ExternalTools.cs`):
+
+- **タスクマネージャー** — `taskmgr.exe`
+- **イベントビューアー (システムログ)** — `eventvwr.exe /c:System`
+  (Windows ログ > システムを選択した状態で起動)
+- **記憶域 (コントロール パネル)** — `control.exe /name Microsoft.StorageSpaces`
+- **音量ミキサー** — `ms-settings:apps-volume`(設定 > システム > サウンド)
+- **インストールされているアプリ** — `ms-settings:appsfeatures`(設定 > アプリ)
 
 ## 常駐動作(タスクトレイ)
 

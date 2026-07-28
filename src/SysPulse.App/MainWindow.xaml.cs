@@ -201,6 +201,9 @@ public partial class MainWindow : Window
         _usageSettings = Usage.Settings.Load();
         _usagePanel = new UsagePanel(_usageSettings);
         br.Children.Add(_usagePanel);
+
+        // 右クリックメニュー(どのパネル上でも表示。子要素から親へ辿って出る)
+        Root.ContextMenu = ExternalTools.BuildContextMenu();
     }
 
     private Grid MakeBlock(int row, int col)
