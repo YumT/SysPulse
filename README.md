@@ -173,7 +173,7 @@
 
 ## 自動更新(GitHub Releases)
 
-起動時に `api.github.com/repos/YumT/SysPulse/releases/latest` を確認し、
+起動時に `api.github.com/repos/YumT/SysPulsar/releases/latest` を確認し、
 `SysPulsar.App.csproj` の `<Version>` より新しいタグがあれば
 バックグラウンドで zip のダウンロード・`%TEMP%\syspulsar-update\stage` への
 展開まで済ませる(`UpdateChecker.cs`)。右クリックメニューの先頭に

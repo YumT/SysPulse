@@ -19,7 +19,7 @@ namespace SysPulsar.App;
 /// </summary>
 public static class UpdateChecker
 {
-    private const string ApiUrl = "https://api.github.com/repos/YumT/SysPulse/releases/latest";
+    private const string ApiUrl = "https://api.github.com/repos/YumT/SysPulsar/releases/latest";
 
     public sealed record UpdateInfo(Version Version, string StagingDir);
 
