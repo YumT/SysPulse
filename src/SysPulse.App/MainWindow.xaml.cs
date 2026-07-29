@@ -14,7 +14,7 @@ namespace SysPulse.App;
 /// <summary>
 /// 2x2 レイアウトの常駐モニター。
 /// 左上: CPU/メモリ/GPU/イーサネット
-/// 右上: プロセス表(上半分) + システムログイベント(下半分)
+/// 右上: プロセス表(残り全部) + イベント件数(下・2行ぶん)
 /// 左下: ディスク(2 列・背景グラフ付き) / 右下: AI Usage(UsageWatcher 統合)
 /// 計測はバックグラウンドスレッド、描画は UI スレッド。
 /// ドラッグ/リサイズ中は WM_ENTERSIZEMOVE/EXITSIZEMOVE で検出して描画を止める。
@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private const int MaxDisks = 10;
     private const int WmEnterSizeMove = 0x0231;
     private const int WmExitSizeMove = 0x0232;
+    private const int WmSettingChange = 0x001A;
 
     private static readonly WpfColor CCpu = Sparkline.Hex("#4fc3f7");
     private static readonly WpfColor CMem = Sparkline.Hex("#ba68c8");
@@ -38,6 +39,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<int, DiskRow> _diskRows = new();
     private ProcessTable _procTable = null!;
     private CriticalEventPanel _eventPanel = null!;
+    private Grid _tl = null!;
     private Grid _bl = null!;
     private Grid _tr = null!;
     private Grid _br = null!;
@@ -46,6 +48,10 @@ public partial class MainWindow : Window
     private UsagePoller? _usagePoller;
     private DispatcherTimer? _usageTick;
     private TextBlock _diskPlaceholder = null!;
+
+    /// <summary>表示エリア(11=1x1 左上のみ / 12=1x2 上半分 / 21=2x1 左半分 / 22=2x2 すべて)。</summary>
+    private int _layoutMode = 22;
+    private readonly Dictionary<int, MenuItem> _layoutItems = new();
 
     private volatile bool _stop;
     private volatile bool _dragging;
@@ -75,7 +81,7 @@ public partial class MainWindow : Window
         Closing += (sender, e) =>
         {
             if (WindowState == System.Windows.WindowState.Normal)
-                SysPulse.App.WindowState.Save(Left, Top, Width, Height);
+                SysPulse.App.WindowState.Save(Left, Top, Width, Height, Topmost, _layoutMode);
             if (!_reallyExit)
             {
                 e.Cancel = true;
@@ -148,6 +154,7 @@ public partial class MainWindow : Window
             Top = s.Top;
             Width = Math.Max(MinWidth, s.Width);
             Height = Math.Max(MinHeight, s.Height);
+            Topmost = s.Topmost;
         }
         else
         {
@@ -167,18 +174,18 @@ public partial class MainWindow : Window
         Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         // 左上: CPU / メモリ / GPU / イーサネット
-        var tl = MakeBlock(0, 0);
-        AddRow(tl, "cpu", "CPU", [CCpu], 100.0);
-        AddRow(tl, "mem", "メモリ", [CMem], 100.0,
+        _tl = MakeBlock(0, 0);
+        AddRow(_tl, "cpu", "CPU", [CCpu], 100.0);
+        AddRow(_tl, "mem", "メモリ", [CMem], 100.0,
                device: $"{SysPulse.Core.Metrics.MemoryMonitor.TotalGb:F1} GB");
-        AddRow(tl, "gpu", "GPU", [CGpu], 100.0);
-        AddRow(tl, "net", "イーサネット", [CDown, CUp], null, subLarge: true, subColor: CUp);
+        AddRow(_tl, "gpu", "GPU", [CGpu], 100.0);
+        AddRow(_tl, "net", "イーサネット", [CDown, CUp], null, subLarge: true, subColor: CUp);
 
-        // 右上: プロセス表(上半分) + システムログイベント(下半分)
+        // 右上: プロセス表(残り全部) + イベント件数(下・2行ぶんの固定高)
         _tr = MakeBlock(0, 1);
         _tr.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _tr.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _procTable = new ProcessTable(rows: 8);
+        _tr.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _procTable = new ProcessTable(rows: 12);
         Grid.SetRow(_procTable, 0);
         _tr.Children.Add(_procTable);
         _eventPanel = new CriticalEventPanel();
@@ -206,28 +213,99 @@ public partial class MainWindow : Window
 
         // 右クリックメニュー(どのパネル上でも表示。子要素から親へ辿って出る)
         Root.ContextMenu = ExternalTools.BuildContextMenu();
-
-        // AI Usage エリアの表示/非表示(デフォルト表示。状態は settings.json に保存し次回起動時に復元。
-        // 非表示時は右上のプロセス+イベント領域を縦いっぱいに伸ばす)
-        var usageToggle = new MenuItem { Header = "AI Usage を表示", IsCheckable = true, IsChecked = _usageSettings.ShowAiUsage };
-        usageToggle.Click += (_, _) =>
-        {
-            SetUsageVisible(usageToggle.IsChecked);
-            _usageSettings.ShowAiUsage = usageToggle.IsChecked;
-            _usageSettings.Save();
-        };
         Root.ContextMenu.Items.Add(new Separator());
-        Root.ContextMenu.Items.Add(usageToggle);
 
-        // 前回の表示/非表示状態を復元
-        SetUsageVisible(_usageSettings.ShowAiUsage);
+        // 表示エリア(レイアウト)の切替(状態は window-state.json に保存し次回起動時に復元)
+        _layoutMode = SysPulse.App.WindowState.LoadLayout();
+        var layoutMenu = new MenuItem { Header = "表示エリア" };
+        foreach (var (mode, label) in new[]
+        {
+            (11, "1×1 (左上のみ)"), (12, "1×2 (上半分のみ)"),
+            (21, "2×1 (左半分のみ)"), (22, "2×2 (すべて)"),
+        })
+        {
+            var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = _layoutMode == mode };
+            int m = mode;
+            item.Click += (_, _) => SetLayoutMode(m);
+            layoutMenu.Items.Add(item);
+            _layoutItems[mode] = item;
+        }
+        Root.ContextMenu.Items.Add(layoutMenu);
+
+        // 常に手前に表示(状態は window-state.json に保存し次回起動時に復元)
+        bool topmost = SysPulse.App.WindowState.LoadTopmost();
+        Topmost = topmost;
+        var topmostToggle = new MenuItem { Header = "常に手前に表示", IsCheckable = true, IsChecked = topmost };
+        topmostToggle.Click += (_, _) =>
+        {
+            Topmost = topmostToggle.IsChecked;
+            SysPulse.App.WindowState.Save(Left, Top, Width, Height, Topmost, _layoutMode);
+        };
+        Root.ContextMenu.Items.Add(topmostToggle);
+        Root.ContextMenu.Items.Add(new Separator());
+
+        // AI Usage の Claude / Kimi 個別の表示切替(デフォルト両方表示。
+        // 状態は settings.json に保存し次回起動時に復元。
+        // 両方非表示なら右下エリアを畳み、右上のプロセス+イベント領域を縦いっぱいに伸ばす)
+        Root.ContextMenu.Items.Add(MakeUsageToggle("Claude", "claude", _usageSettings.ShowClaude, v => _usageSettings.ShowClaude = v));
+        Root.ContextMenu.Items.Add(MakeUsageToggle("Kimi", "kimi", _usageSettings.ShowKimi, v => _usageSettings.ShowKimi = v));
+
+        // 前回の表示エリア・表示/非表示状態を復元
+        ApplyLayout();
     }
 
-    /// <summary>右下の AI Usage エリアの表示/非表示を切り替える。</summary>
-    private void SetUsageVisible(bool visible)
+    /// <summary>表示エリアを切り替える(右クリックメニュー「表示エリア」から)。</summary>
+    private void SetLayoutMode(int mode)
     {
-        _br.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        Grid.SetRowSpan(_tr, visible ? 1 : 2);
+        _layoutMode = mode;
+        foreach (var (m, item) in _layoutItems)
+            item.IsChecked = m == mode;
+        ApplyLayout();
+        SysPulse.App.WindowState.Save(Left, Top, Width, Height, Topmost, _layoutMode);
+    }
+
+    /// <summary>AI Usage のプロバイダ表示切替メニュー項目を作る。</summary>
+    private MenuItem MakeUsageToggle(string name, string providerId, bool initial, Action<bool> setter)
+    {
+        var item = new MenuItem { Header = $"{name} を表示", IsCheckable = true, IsChecked = initial };
+        item.Click += (_, _) =>
+        {
+            setter(item.IsChecked);
+            _usageSettings.Save();
+            ApplyLayout();
+        };
+        return item;
+    }
+
+    /// <summary>表示エリア(レイアウト)と AI Usage の表示設定をグリッドに適用する。
+    /// 非表示の行・列は幅/高さ 0 に畳む。2x2 で Claude / Kimi 両方非表示なら
+    /// 右下エリアを畳み、右上のプロセス+イベント領域を縦いっぱいに伸ばす。</summary>
+    private void ApplyLayout()
+    {
+        _usagePanel.SetProviderVisible("claude", _usageSettings.ShowClaude);
+        _usagePanel.SetProviderVisible("kimi", _usageSettings.ShowKimi);
+
+        bool hasBottom = _layoutMode is 21 or 22;
+        bool hasRight = _layoutMode is 12 or 22;
+        bool usageVisible = _usageSettings.ShowClaude || _usageSettings.ShowKimi;
+
+        _tr.Visibility = hasRight ? Visibility.Visible : Visibility.Collapsed;
+        _bl.Visibility = hasBottom ? Visibility.Visible : Visibility.Collapsed;
+        _br.Visibility = hasBottom && hasRight && usageVisible ? Visibility.Visible : Visibility.Collapsed;
+        Grid.SetRowSpan(_tr, hasBottom && usageVisible ? 1 : 2);
+
+        Root.RowDefinitions[1].Height = new GridLength(hasBottom ? 1 : 0, GridUnitType.Star);
+        Root.ColumnDefinitions[1].Width = new GridLength(hasRight ? 1 : 0, GridUnitType.Star);
+
+        // モードに応じて最小サイズを緩める(小さいモードでは小さく畳めるように)。
+        // 2x2 に戻したとき現在サイズが最小を下回っていれば WPF が自動で広げる
+        (MinWidth, MinHeight) = _layoutMode switch
+        {
+            11 => (300.0, 280.0), // 左上のみ
+            12 => (560.0, 280.0), // 上半分
+            21 => (300.0, 500.0), // 左半分
+            _ => (560.0, 500.0),  // すべて
+        };
     }
 
     private Grid MakeBlock(int row, int col)
@@ -322,7 +400,7 @@ public partial class MainWindow : Window
         while (!_stop)
         {
             var t0 = Environment.TickCount64;
-            Snapshot snap = _monitor.Sample(processLimit: 8);
+            Snapshot snap = _monitor.Sample(processLimit: 12);
             if (!_dragging)
             {
                 try { Dispatcher.BeginInvoke(() => ApplySnapshot(snap)); }
@@ -351,15 +429,24 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>システムログのイベント(全レベル)を 60 秒周期で確認する。</summary>
+    /// <summary>システムログのイベント件数(全レベル)を 60 秒周期で確認する。</summary>
     private void EventsLoop()
     {
         while (!_stop)
         {
-            var data = CriticalEventPanel.QueryAll(4); // ブロックする。専用スレッドなので OK
+            IReadOnlyDictionary<byte, int>? counts = null;
+            string? error = null;
+            try
+            {
+                counts = CriticalEventPanel.QueryCounts(); // ブロックする。専用スレッドなので OK
+            }
+            catch (Exception ex)
+            {
+                error = "イベントログの読み取りに失敗: " + ex.Message;
+            }
             if (!_dragging)
             {
-                try { Dispatcher.BeginInvoke(() => _eventPanel.SetData(data)); }
+                try { Dispatcher.BeginInvoke(() => _eventPanel.SetData(counts, error)); }
                 catch (InvalidOperationException) { }
             }
             for (int waited = 0; waited < 60_000 && !_stop; waited += 200)
@@ -562,6 +649,7 @@ public partial class MainWindow : Window
         base.OnSourceInitialized(e);
         var source = (HwndSource?)PresentationSource.FromVisual(this);
         source?.AddHook(WndProc);
+        ApplyWindowFrameTheme();
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -570,6 +658,38 @@ public partial class MainWindow : Window
             _dragging = true;
         else if (msg == WmExitSizeMove)
             _dragging = false;
+        else if (msg == WmSettingChange)
+            ApplyWindowFrameTheme(); // OS のテーマ変更に追従
         return IntPtr.Zero;
     }
+
+    // ---- ウィンドウ枠のテーマ ----
+
+    /// <summary>タイトルバーなどのウィンドウ枠を OS のアプリテーマ(ライト/ダーク)に
+    /// 合わせる。Personalize\AppsUseLightTheme を読み、DWM の
+    /// DWMWA_USE_IMMERSIVE_DARK_MODE に反映する。本体 UI は常にダークのまま。
+    /// 属性 20 は 20H1 以降、19 は 1903/1909 用(失敗した側は無視)。</summary>
+    private void ApplyWindowFrameTheme()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+            return;
+        bool dark;
+        try
+        {
+            dark = Microsoft.Win32.Registry.GetValue(
+                @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                "AppsUseLightTheme", 1) is int v && v == 0;
+        }
+        catch
+        {
+            dark = true; // 読めなければ本体 UI に合わせてダーク
+        }
+        int useDark = dark ? 1 : 0;
+        _ = DwmSetWindowAttribute(hwnd, 20, ref useDark, sizeof(int)) == 0 ||
+            DwmSetWindowAttribute(hwnd, 19, ref useDark, sizeof(int)) == 0;
+    }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 }

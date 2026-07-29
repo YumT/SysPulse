@@ -5,7 +5,7 @@ using SysPulse.Core.Models;
 
 namespace SysPulse.App.Controls;
 
-/// <summary>CPU 負荷上位プロセスの表(CPU 降順 8 行、Idle は Core 側で除外済み)。</summary>
+/// <summary>CPU 負荷上位プロセスの表(CPU 降順 12 行、Idle は Core 側で除外済み)。</summary>
 public sealed class ProcessTable : Grid
 {
     private static readonly (string Text, bool Left)[] Headers =
@@ -21,11 +21,11 @@ public sealed class ProcessTable : Grid
     private readonly TextBlock[,] _cells;
     private readonly int[] _pids;
 
-    /// <summary>CPU 負荷上位プロセスの表(CPU 降順 8 行、Idle は Core 側で除外済み)。
+    /// <summary>CPU 負荷上位プロセスの表(CPU 降順 12 行、Idle は Core 側で除外済み)。
     /// 列は プロセス / CPU % / メモリ % / ディスク / GPU %(PDH GPU Engine を PID 毎に合算)。
-    /// 右上をイベント監視と上下分割するため行間を詰めたコンパクト表示。
+    /// 右上をイベント件数パネルと上下分割するため行間を詰めたコンパクト表示。
     /// プロセス名の右クリックで「ファイルの場所を開く」(その行の PID を解決する)。</summary>
-    public ProcessTable(int rows = 8)
+    public ProcessTable(int rows = 12)
     {
         Background = PanelBrush;
         Margin = new Thickness(0, 1, 0, 1);

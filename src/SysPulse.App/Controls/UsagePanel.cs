@@ -26,6 +26,7 @@ public sealed class UsagePanel : Grid
     private readonly TextBlock _placeholder;
     private readonly Dictionary<string, ProviderSection> _sections = new();
     private readonly List<string> _order = new(); // プロバイダの表示順
+    private readonly HashSet<string> _hidden = new(); // 右クリックメニューで非表示にされたプロバイダ
 
     public UsagePanel(Settings settings)
     {
@@ -50,6 +51,19 @@ public sealed class UsagePanel : Grid
     {
         if (!_order.Contains(providerId))
             _order.Add(providerId);
+    }
+
+    /// <summary>プロバイダ単位の表示/非表示を切り替える(右クリックメニューから)。
+    /// セクション未作成(初回スナップショット前)でも _hidden に記録しておき、
+    /// 作成時に反映する。パネル全体の表示/非表示は MainWindow 側で行う。</summary>
+    public void SetProviderVisible(string providerId, bool visible)
+    {
+        if (visible)
+            _hidden.Remove(providerId);
+        else
+            _hidden.Add(providerId);
+        if (_sections.TryGetValue(providerId, out var sec))
+            sec.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public Brush ColorFor(double pct)
@@ -81,6 +95,7 @@ public sealed class UsagePanel : Grid
                 }
             }
             sec.Tag = snap.ProviderId;
+            sec.Visibility = _hidden.Contains(snap.ProviderId) ? Visibility.Collapsed : Visibility.Visible;
             _body.Children.Insert(index, sec);
         }
 
