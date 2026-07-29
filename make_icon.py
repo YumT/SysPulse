@@ -1,4 +1,4 @@
-"""SysPulse アイコン生成。ダーク背景 + パルス波形(ECG 風)を描き、マルチサイズ .ico にする。"""
+"""SysPulsar アイコン生成。ダーク背景 + パルス波形(ECG 風)を描き、マルチサイズ .ico にする。"""
 from PIL import Image, ImageDraw, ImageFilter
 import os
 
@@ -56,7 +56,7 @@ def make_icon() -> Image.Image:
     img.alpha_composite(line_layer)
     return img
 
-out_dir = os.path.join(os.path.dirname(__file__), "src", "SysPulse.App", "Assets")
+out_dir = os.path.join(os.path.dirname(__file__), "src", "SysPulsar.App", "Assets")
 os.makedirs(out_dir, exist_ok=True)
 
 img = make_icon()

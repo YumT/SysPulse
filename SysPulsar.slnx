@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SysPulsar.App/SysPulsar.App.csproj" />
+    <Project Path="src/SysPulsar.Core/SysPulsar.Core.csproj" />
+    <Project Path="src/SysPulsar.Dump/SysPulsar.Dump.csproj" />
+  </Folder>
+</Solution>

@@ -1,14 +1,14 @@
-# SysPulse (C# 移植版)
+# SysPulsar (C# 移植版)
 
 タスクマネージャー風システムモニター。Python 版の C# 再実装。
 仕様の正典は Python 版の PORTING.md(旧ワークスペース
 `SysPulse タスクマネージャー開発/SysPulse_python3`)。**管理者権限不要**が最重要方針。
 
-![SysPulse の画面](screenshot.png)
+![SysPulsar の画面](screenshot.png)
 
 ## 構成
 
-- `src/SysPulse.Core` — 計測ライブラリ。UI 非依存。後の WPF アプリからもこれを参照する
+- `src/SysPulsar.Core` — 計測ライブラリ。UI 非依存。後の WPF アプリからもこれを参照する
   - `Metrics/` — CPU(GetSystemTimes + PDH)、メモリ(GlobalMemoryStatusEx)、
     ディスク(PDH `\PhysicalDisk(*)\% Disk Time`)、ネット(NIC バイトカウンタ差分)、
     プロセス(TotalProcessorTime 差分 + GetProcessIoCounters +
@@ -20,10 +20,10 @@
   - `DeviceInfo/DeviceInfoProvider.cs` — WMI 系の遅いデバイス名取得。
     **必ずバックグラウンドスレッドから呼ぶ**(Python 版で起動フリーズした経緯あり)
   - `SystemMonitor.cs` — 計測の窓口(facade)
-- `src/SysPulse.Dump` — 検証用 CLI。Python 版の `python syspulse.py --dump` 相当。
+- `src/SysPulsar.Dump` — 検証用 CLI。Python 版の `python syspulse.py --dump` 相当。
   全メトリクスを 1 回 JSON で出力
-- `src/SysPulse.App` — WPF GUI(2x2 レイアウト、スパークライン自前描画、
-  ドラッグ/リサイズ中は描画停止)。実行時は `SysPulse.exe`
+- `src/SysPulsar.App` — WPF GUI(2x2 レイアウト、スパークライン自前描画、
+  ドラッグ/リサイズ中は描画停止)。実行時は `SysPulsar.exe`
   - `Controls/Sparkline.cs` — 履歴 120 サンプル右詰め、塗りつぶし→線の 2 パス描画
   - `Controls/MetricRow.cs` / `Controls/ProcessTable.cs` — メトリクス行 / プロセス表
   - `Controls/DiskRow.cs` — ディスクセル(2 列 x 5 行。背景スパークライン+2 行表示)
@@ -78,7 +78,7 @@
 - `kimiApiKey`: Kimi Code Console で発行する API キー(sk-...)。
   AI Usage の Kimi 側認証で最優先に使われる(後述)。**git 管理外の実値は
   `publish/config.json` とインストール先にだけ置く**こと(リポジトリの
-  `src/SysPulse.App/config.json` は空のテンプレート)
+  `src/SysPulsar.App/config.json` は空のテンプレート)
 - `disks` が空 → Online ディスクをドライブレター順に最大 10 台自動検出。
   表示名はドライブレター+ボリュームラベル("C:システム"、複数パーティションの
   物理ディスクは "C:システム F:データ" で並びは先頭レター基準)。
@@ -174,8 +174,8 @@
 ## 自動更新(GitHub Releases)
 
 起動時に `api.github.com/repos/YumT/SysPulse/releases/latest` を確認し、
-`SysPulse.App.csproj` の `<Version>` より新しいタグがあれば
-バックグラウンドで zip のダウンロード・`%TEMP%\syspulse-update\stage` への
+`SysPulsar.App.csproj` の `<Version>` より新しいタグがあれば
+バックグラウンドで zip のダウンロード・`%TEMP%\syspulsar-update\stage` への
 展開まで済ませる(`UpdateChecker.cs`)。右クリックメニューの先頭に
 「vX.Y.Z に更新」が出るので、クリックすると差し替え bat が
 「終了待ち → exe/bat の上書き → 再起動」を行う。
@@ -214,27 +214,27 @@ Visual Studio から開く場合は通常の環境変数が揃っているため
 
 ```sh
 # 自己完結 single-file(.NET ランタイム不要、約 65MB)を publish/ に生成
-dotnet publish src/SysPulse.App -c Release -r win-x64 --self-contained true \
+dotnet publish src/SysPulsar.App -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
   -p:EnableCompressionInSingleFile=true -o publish
 
-# %LOCALAPPDATA%\Programs\SysPulse にコピーし、スタートアップに SysPulse.lnk を作成
+# %LOCALAPPDATA%\Programs\SysPulsar にコピーし、スタートアップに SysPulsar.lnk を作成
 # (Windows ログオン時に自動起動。削除はショートカットを消すだけ)
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 配布(zip 同梱)向けには、exe と同じフォルダで実行する自動起動の登録/解除 bat を
-用意している(どちらもスタートアップフォルダの `SysPulse.lnk` を作成/削除するだけ。
+用意している(どちらもスタートアップフォルダの `SysPulsar.lnk` を作成/削除するだけ。
 管理者権限不要):
 
-- `autostart-register.bat` — 登録(同じフォルダの SysPulse.exe をログオン時に起動)
+- `autostart-register.bat` — 登録(同じフォルダの SysPulsar.exe をログオン時に起動)
 - `autostart-unregister.bat` — 解除
 
 ## 動作確認
 
 ```sh
-./src/SysPulse.Dump/bin/Debug/net10.0-windows/SysPulse.Dump.exe   # 計測のみ
-./src/SysPulse.App/bin/Release/net10.0-windows/SysPulse.exe       # GUI
+./src/SysPulsar.Dump/bin/Debug/net10.0-windows/SysPulsar.Dump.exe   # 計測のみ
+./src/SysPulsar.App/bin/Release/net10.0-windows/SysPulsar.exe       # GUI
 ```
 
 初回サンプルはレート系(CPU/ネット/ディスク)が計算できないため内部で捨て、

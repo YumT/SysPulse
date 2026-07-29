@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SysPulse ビルドスクリプト
+# SysPulsar ビルドスクリプト
 # この環境(Kimi Work の Git Bash)には ProgramFiles/ProgramData 系の標準環境変数がなく、
 # そのままでは NuGet restore が "Value cannot be null. (Parameter 'path1')" で失敗する。
 # またソリューションレベルのビルドでは MSBuild ワーカーノード再利用で古い環境の
@@ -19,4 +19,4 @@ env PATH="$PATH:/c/Program Files/dotnet" \
   dotnet build -nr:false "$@"
 
 echo
-echo "Dump CLI: src/SysPulse.Dump/bin/Debug/net10.0-windows/SysPulse.Dump.exe"
+echo "Dump CLI: src/SysPulsar.Dump/bin/Debug/net10.0-windows/SysPulsar.Dump.exe"

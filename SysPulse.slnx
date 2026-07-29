@@ -1,7 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="src/SysPulse.App/SysPulse.App.csproj" />
-    <Project Path="src/SysPulse.Core/SysPulse.Core.csproj" />
-    <Project Path="src/SysPulse.Dump/SysPulse.Dump.csproj" />
-  </Folder>
-</Solution>
