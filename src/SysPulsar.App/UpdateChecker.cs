@@ -23,6 +23,14 @@ public static class UpdateChecker
 
     public sealed record UpdateInfo(Version Version, string StagingDir);
 
+    /// <summary>確認結果。Info != null なら更新の DL・展開済み。
+    /// Info == null で UpToDate == true なら「最新版」、false なら確認自体の失敗。
+    /// (自動確認ではどちらも黙殺、手動確認ではメッセージを出し分ける)</summary>
+    public sealed record CheckResult(UpdateInfo? Info, bool UpToDate);
+
+    private static readonly CheckResult Failed = new(null, false);
+    private static readonly CheckResult UpToDateResult = new(null, true);
+
     /// <summary>現在のバージョン(csproj の Version。リリースのタグ vX.Y.Z と対応)。
     /// SDK 8+ は InformationalVersion にコミットハッシュを "+..." で付記するため除去する。</summary>
     public static Version CurrentVersion { get; } =
@@ -34,9 +42,10 @@ public static class UpdateChecker
             ? v
             : new Version(0, 0, 0);
 
-    /// <summary>更新があればダウンロード・展開して返す。なければ null。
-    /// 展開物から config.json は除く(適用時にユーザー設定を上書きしないため)。</summary>
-    public static async Task<UpdateInfo?> CheckAndDownloadAsync(CancellationToken ct)
+    /// <summary>更新があればダウンロード・展開して返す。
+    /// 展開物から config.json は除く(適用時にユーザー設定を上書きしないため)。
+    /// 失敗時は Info == null(UpToDate で「最新版」と「失敗」を区別できる)。</summary>
+    public static async Task<CheckResult> CheckAndDownloadAsync(CancellationToken ct)
     {
         try
         {
@@ -47,8 +56,10 @@ public static class UpdateChecker
             var json = await http.GetStringAsync(ApiUrl, ct);
             using var doc = JsonDocument.Parse(json);
             string tag = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
-            if (!Version.TryParse(tag.TrimStart('v'), out Version? latest) || latest <= CurrentVersion)
-                return null;
+            if (!Version.TryParse(tag.TrimStart('v'), out Version? latest))
+                return Failed;
+            if (latest <= CurrentVersion)
+                return UpToDateResult;
 
             string? assetUrl = null, hashUrl = null;
             foreach (var a in doc.RootElement.GetProperty("assets").EnumerateArray())
@@ -61,7 +72,7 @@ public static class UpdateChecker
             }
             // fail closed: ハッシュ アセットが無いリリースには更新しない(照合不能なため)
             if (assetUrl == null || hashUrl == null)
-                return null;
+                return Failed;
 
             string zipPath = Path.Combine(Path.GetTempPath(), "syspulsar-update", "update.zip");
             byte[] zipBytes = await http.GetByteArrayAsync(assetUrl, ct);
@@ -70,10 +81,10 @@ public static class UpdateChecker
             string hashText = await http.GetStringAsync(hashUrl, ct);
             var m = Regex.Match(hashText, @"\b[0-9a-fA-F]{64}\b");
             if (!m.Success)
-                return null;
+                return Failed;
             string actual = Convert.ToHexString(SHA256.HashData(zipBytes));
             if (!actual.Equals(m.Value, StringComparison.OrdinalIgnoreCase))
-                return null; // 改ざん・壊れの可能性。適用も提示もしない
+                return Failed; // 改ざん・壊れの可能性。適用も提示もしない
 
             // 照合 OK。%TEMP%\syspulsar-update\stage に展開(前回の残りがあれば捨てる)
             string dir = Path.Combine(Path.GetTempPath(), "syspulsar-update");
@@ -90,12 +101,12 @@ public static class UpdateChecker
             if (File.Exists(stagedConfig))
                 File.Delete(stagedConfig);
             if (!File.Exists(Path.Combine(stage, "SysPulsar.exe")))
-                return null;
-            return new UpdateInfo(latest, stage);
+                return Failed;
+            return new CheckResult(new UpdateInfo(latest, stage), false);
         }
         catch
         {
-            return null;
+            return Failed;
         }
     }
 

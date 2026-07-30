@@ -17,16 +17,24 @@ public sealed class WindowState
     [JsonPropertyName("width")] public double Width { get; set; } = 640;
     [JsonPropertyName("height")] public double Height { get; set; } = 550;
     [JsonPropertyName("topmost")] public bool Topmost { get; set; }
-    /// <summary>表示エリア(11=1x1 左上のみ / 12=1x2 上半分 / 21=2x1 左半分 / 22=2x2 すべて)。</summary>
+    /// <summary>表示エリア(11=1x1 / 12=1x2 / 21=2x1 / 22=2x2)。スロット数は 1/2/2/4。</summary>
     [JsonPropertyName("layout")] public int Layout { get; set; } = 22;
+    /// <summary>表示要素: メトリクス(CPU/メモリ/GPU/ネット)を表示するか。</summary>
+    [JsonPropertyName("showMetrics")] public bool ShowMetrics { get; set; } = true;
+    /// <summary>表示要素: プロセス＆イベントを表示するか。</summary>
+    [JsonPropertyName("showProcesses")] public bool ShowProcesses { get; set; } = true;
+    /// <summary>表示要素: ディスクを表示するか。</summary>
+    [JsonPropertyName("showDisks")] public bool ShowDisks { get; set; } = true;
+    /// <summary>表示要素: AI Usage(Claude/Kimi)を表示するか。</summary>
+    [JsonPropertyName("showUsage")] public bool ShowUsage { get; set; } = true;
 
     private static string StatePath =>
         Path.Combine(AppContext.BaseDirectory, "window-state.json");
 
     /// <summary>画面外チェックを挟まずにデシリアライズだけ行う。
-    /// 位置が画面外で Load が null を返す場合でも Topmost / Layout は
+    /// 位置が画面外で Load が null を返す場合でも Topmost / Layout / 表示要素は
     /// 復元したいので、それらはこちらから読む。</summary>
-    private static WindowState? LoadRaw()
+    public static WindowState? LoadRaw()
     {
         try
         {
@@ -53,17 +61,10 @@ public sealed class WindowState
         return visible ? state : null;
     }
 
-    /// <summary>「常に手前に表示」の保存値だけを読む。</summary>
-    public static bool LoadTopmost() => LoadRaw()?.Topmost ?? false;
-
-    /// <summary>表示エリアの保存値だけを読む(無効値は 22=2x2 にフォールバック)。</summary>
-    public static int LoadLayout() => LoadRaw() is { } s && s.Layout is 11 or 12 or 21 or 22 ? s.Layout : 22;
-
-    public static void Save(double left, double top, double width, double height, bool topmost, int layout)
+    public static void Save(WindowState state)
     {
         try
         {
-            var state = new WindowState { Left = left, Top = top, Width = width, Height = height, Topmost = topmost, Layout = layout };
             File.WriteAllText(StatePath, JsonSerializer.Serialize(state));
         }
         catch

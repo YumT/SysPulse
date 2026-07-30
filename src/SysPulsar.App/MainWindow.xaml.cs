@@ -13,9 +13,9 @@ namespace SysPulsar.App;
 
 /// <summary>
 /// 2x2 レイアウトの常駐モニター。
-/// 左上: CPU/メモリ/GPU/イーサネット
-/// 右上: プロセス表(残り全部) + イベント件数(下・2行ぶん)
-/// 左下: ディスク(2 列・背景グラフ付き) / 右下: AI Usage(UsageWatcher 統合)
+/// 表示要素は メトリクス(CPU/メモリ/GPU/ネット) / プロセス＆イベント /
+/// ディスク / AI Usage の 4 つで、「表示エリア」の領域数(1/2/2/4)ぶんの
+/// スロットにこの順で流し込まれる。表示要素は右クリックメニューで切替可能。
 /// 計測はバックグラウンドスレッド、描画は UI スレッド。
 /// ドラッグ/リサイズ中は WM_ENTERSIZEMOVE/EXITSIZEMOVE で検出して描画を止める。
 /// </summary>
@@ -49,9 +49,19 @@ public partial class MainWindow : Window
     private DispatcherTimer? _usageTick;
     private TextBlock _diskPlaceholder = null!;
 
-    /// <summary>表示エリア(11=1x1 左上のみ / 12=1x2 上半分 / 21=2x1 左半分 / 22=2x2 すべて)。</summary>
+    /// <summary>表示エリア(11=1x1 / 12=1x2 / 21=2x1 / 22=2x2)。スロット数は 1/2/2/4。</summary>
     private int _layoutMode = 22;
     private readonly Dictionary<int, MenuItem> _layoutItems = new();
+
+    /// <summary>更新適用項目をメニューに挿入済みか(二重挿入防止)。</summary>
+    private bool _updateOffered;
+
+    /// <summary>表示要素の有効/無効(メトリクス/プロセス＆イベント/ディスク/AI Usage)。
+    /// 有効な要素が固定順でスロットに流し込まれる。スロット数を超えた分は出ない。</summary>
+    private bool _showMetrics = true;
+    private bool _showProcesses = true;
+    private bool _showDisks = true;
+    private bool _showUsage = true;
 
     private volatile bool _stop;
     private volatile bool _dragging;
@@ -81,7 +91,7 @@ public partial class MainWindow : Window
         Closing += (sender, e) =>
         {
             if (WindowState == System.Windows.WindowState.Normal)
-                SysPulsar.App.WindowState.Save(Left, Top, Width, Height, Topmost, _layoutMode);
+                SaveWindowState();
             if (!_reallyExit)
             {
                 e.Cancel = true;
@@ -215,13 +225,22 @@ public partial class MainWindow : Window
         Root.ContextMenu = ExternalTools.BuildContextMenu();
         Root.ContextMenu.Items.Add(new Separator());
 
-        // 表示エリア(レイアウト)の切替(状態は window-state.json に保存し次回起動時に復元)
-        _layoutMode = SysPulsar.App.WindowState.LoadLayout();
+        // 表示エリア(レイアウト)の切替。領域数は 1/2/2/4(1x1/1x2/2x1/2x2)。
+        // 状態は window-state.json に保存し次回起動時に復元
+        var saved = SysPulsar.App.WindowState.LoadRaw();
+        _layoutMode = saved?.Layout is 11 or 12 or 21 or 22 ? saved.Layout : 22;
+        if (saved != null)
+        {
+            _showMetrics = saved.ShowMetrics;
+            _showProcesses = saved.ShowProcesses;
+            _showDisks = saved.ShowDisks;
+            _showUsage = saved.ShowUsage;
+        }
         var layoutMenu = new MenuItem { Header = "表示エリア" };
         foreach (var (mode, label) in new[]
         {
-            (11, "1×1 (左上のみ)"), (12, "1×2 (上半分のみ)"),
-            (21, "2×1 (左半分のみ)"), (22, "2×2 (すべて)"),
+            (11, "1×1 (領域 1)"), (12, "1×2 (領域 2)"),
+            (21, "2×1 (領域 2)"), (22, "2×2 (領域 4)"),
         })
         {
             var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = _layoutMode == mode };
@@ -232,27 +251,59 @@ public partial class MainWindow : Window
         }
         Root.ContextMenu.Items.Add(layoutMenu);
 
+        // 表示要素の切替(有効な要素が メトリクス→プロセス＆イベント→ディスク→AI Usage の
+        // 順にスロットへ流し込まれる。表示エリアの領域数を超えた分は表示されない)
+        var elementMenu = new MenuItem { Header = "表示要素" };
+        elementMenu.Items.Add(MakeElementToggle("CPU など (メトリクス)", _showMetrics, v => _showMetrics = v));
+        elementMenu.Items.Add(MakeElementToggle("プロセス＆イベント", _showProcesses, v => _showProcesses = v));
+        elementMenu.Items.Add(MakeElementToggle("ドライブ (ディスク)", _showDisks, v => _showDisks = v));
+        elementMenu.Items.Add(MakeElementToggle("AI Usage (Claude/Kimi)", _showUsage, v => _showUsage = v));
+        Root.ContextMenu.Items.Add(elementMenu);
+
         // 常に手前に表示(状態は window-state.json に保存し次回起動時に復元)
-        bool topmost = SysPulsar.App.WindowState.LoadTopmost();
+        bool topmost = saved?.Topmost ?? false;
         Topmost = topmost;
         var topmostToggle = new MenuItem { Header = "常に手前に表示", IsCheckable = true, IsChecked = topmost };
         topmostToggle.Click += (_, _) =>
         {
             Topmost = topmostToggle.IsChecked;
-            SysPulsar.App.WindowState.Save(Left, Top, Width, Height, Topmost, _layoutMode);
+            SaveWindowState();
         };
         Root.ContextMenu.Items.Add(topmostToggle);
         Root.ContextMenu.Items.Add(new Separator());
 
         // AI Usage の Claude / Kimi 個別の表示切替(デフォルト両方表示。
         // 状態は settings.json に保存し次回起動時に復元。
-        // 両方非表示なら右下エリアを畳み、右上のプロセス+イベント領域を縦いっぱいに伸ばす)
+        // 両方非表示なら AI Usage 要素は出ず、そのぶん他の要素が詰めて表示される)
         Root.ContextMenu.Items.Add(MakeUsageToggle("Claude", "claude", _usageSettings.ShowClaude, v => _usageSettings.ShowClaude = v));
         Root.ContextMenu.Items.Add(MakeUsageToggle("Kimi", "kimi", _usageSettings.ShowKimi, v => _usageSettings.ShowKimi = v));
+        Root.ContextMenu.Items.Add(new Separator());
 
-        // 前回の表示エリア・表示/非表示状態を復元
+        // 手動の更新確認(起動時の自動チェックと同じ流れ。更新があれば DL まで済ませて
+        // メニュー先頭に適用項目を挿入、最新版/失敗はメッセージで通知)
+        var checkItem = new MenuItem { Header = "更新を確認" };
+        checkItem.Click += async (_, _) =>
+        {
+            checkItem.IsEnabled = false; // 連打防止(完了/失敗後に戻す)
+            try { await CheckForUpdateAsync(manual: true); }
+            finally { checkItem.IsEnabled = true; }
+        };
+        Root.ContextMenu.Items.Add(checkItem);
+
+        // 前回の表示エリア・表示要素の状態を復元
         ApplyLayout();
     }
+
+    /// <summary>現在のウィンドウ状態(位置・サイズ・Topmost・表示エリア・表示要素)を
+    /// window-state.json に保存する。</summary>
+    private void SaveWindowState() =>
+        SysPulsar.App.WindowState.Save(new SysPulsar.App.WindowState
+        {
+            Left = Left, Top = Top, Width = Width, Height = Height,
+            Topmost = Topmost, Layout = _layoutMode,
+            ShowMetrics = _showMetrics, ShowProcesses = _showProcesses,
+            ShowDisks = _showDisks, ShowUsage = _showUsage,
+        });
 
     /// <summary>表示エリアを切り替える(右クリックメニュー「表示エリア」から)。</summary>
     private void SetLayoutMode(int mode)
@@ -261,7 +312,20 @@ public partial class MainWindow : Window
         foreach (var (m, item) in _layoutItems)
             item.IsChecked = m == mode;
         ApplyLayout();
-        SysPulsar.App.WindowState.Save(Left, Top, Width, Height, Topmost, _layoutMode);
+        SaveWindowState();
+    }
+
+    /// <summary>表示要素の切替メニュー項目を作る。</summary>
+    private MenuItem MakeElementToggle(string name, bool initial, Action<bool> setter)
+    {
+        var item = new MenuItem { Header = name, IsCheckable = true, IsChecked = initial };
+        item.Click += (_, _) =>
+        {
+            setter(item.IsChecked);
+            ApplyLayout();
+            SaveWindowState();
+        };
+        return item;
     }
 
     /// <summary>AI Usage のプロバイダ表示切替メニュー項目を作る。</summary>
@@ -277,9 +341,12 @@ public partial class MainWindow : Window
         return item;
     }
 
-    /// <summary>表示エリア(レイアウト)と AI Usage の表示設定をグリッドに適用する。
-    /// 非表示の行・列は幅/高さ 0 に畳む。2x2 で Claude / Kimi 両方非表示なら
-    /// 右下エリアを畳み、右上のプロセス+イベント領域を縦いっぱいに伸ばす。</summary>
+    /// <summary>表示エリア(レイアウト)と表示要素の設定をグリッドに適用する。
+    /// モードの領域数(1/2/2/4)ぶんのスロットに、有効な表示要素を固定順
+    /// (メトリクス→プロセス＆イベント→ディスク→AI Usage)で流し込む。
+    /// スロット数を超えた要素は出ない。空いた下段スロットは真上の要素を
+    /// 縦に伸ばして埋める(2x2 で AI Usage 非表示時にプロセス領域が縦いっぱいに
+    /// なる従来挙動もこれで実現される)。</summary>
     private void ApplyLayout()
     {
         _usagePanel.SetProviderVisible("claude", _usageSettings.ShowClaude);
@@ -287,24 +354,58 @@ public partial class MainWindow : Window
 
         bool hasBottom = _layoutMode is 21 or 22;
         bool hasRight = _layoutMode is 12 or 22;
-        bool usageVisible = _usageSettings.ShowClaude || _usageSettings.ShowKimi;
-
-        _tr.Visibility = hasRight ? Visibility.Visible : Visibility.Collapsed;
-        _bl.Visibility = hasBottom ? Visibility.Visible : Visibility.Collapsed;
-        _br.Visibility = hasBottom && hasRight && usageVisible ? Visibility.Visible : Visibility.Collapsed;
-        Grid.SetRowSpan(_tr, hasBottom && usageVisible ? 1 : 2);
 
         Root.RowDefinitions[1].Height = new GridLength(hasBottom ? 1 : 0, GridUnitType.Star);
         Root.ColumnDefinitions[1].Width = new GridLength(hasRight ? 1 : 0, GridUnitType.Star);
+
+        // モードのスロット(配置順)
+        (int Row, int Col)[] slots = _layoutMode switch
+        {
+            11 => [(0, 0)],
+            12 => [(0, 0), (0, 1)],
+            21 => [(0, 0), (1, 0)],
+            _ => [(0, 0), (0, 1), (1, 0), (1, 1)],
+        };
+
+        // 有効な表示要素(固定順)。AI Usage は Claude/Kimi 両方非表示なら要素自体なし
+        bool usageVisible = _showUsage && (_usageSettings.ShowClaude || _usageSettings.ShowKimi);
+        var elements = new List<Grid>(4);
+        if (_showMetrics) elements.Add(_tl);
+        if (_showProcesses) elements.Add(_tr);
+        if (_showDisks) elements.Add(_bl);
+        if (usageVisible) elements.Add(_br);
+
+        // いったん全要素を隠してスパンを戻してから、スロットに流し込む
+        var occupied = new Dictionary<(int Row, int Col), Grid>();
+        foreach (var g in new[] { _tl, _tr, _bl, _br })
+        {
+            g.Visibility = Visibility.Collapsed;
+            Grid.SetRowSpan(g, 1);
+        }
+        for (int i = 0; i < elements.Count && i < slots.Length; i++)
+        {
+            var (row, col) = slots[i];
+            var g = elements[i];
+            Grid.SetRow(g, row);
+            Grid.SetColumn(g, col);
+            g.Margin = col == 0 ? new Thickness(6, 3, 3, 3) : new Thickness(3, 3, 6, 3);
+            g.Visibility = Visibility.Visible;
+            occupied[(row, col)] = g;
+        }
+        // 空いた下段スロットは真上の要素を縦に伸ばして埋める
+        if (hasBottom)
+            for (int c = 0; c <= (hasRight ? 1 : 0); c++)
+                if (occupied.TryGetValue((0, c), out var above) && !occupied.ContainsKey((1, c)))
+                    Grid.SetRowSpan(above, 2);
 
         // モードに応じて最小サイズを緩める(小さいモードでは小さく畳めるように)。
         // 2x2 に戻したとき現在サイズが最小を下回っていれば WPF が自動で広げる
         (MinWidth, MinHeight) = _layoutMode switch
         {
-            11 => (300.0, 280.0), // 左上のみ
-            12 => (560.0, 280.0), // 上半分
-            21 => (300.0, 500.0), // 左半分
-            _ => (560.0, 500.0),  // すべて
+            11 => (300.0, 280.0), // 領域 1
+            12 => (560.0, 280.0), // 領域 2(横並び)
+            21 => (300.0, 500.0), // 領域 2(縦並び)
+            _ => (560.0, 500.0),  // 領域 4
         };
     }
 
@@ -364,13 +465,36 @@ public partial class MainWindow : Window
         _ = CheckForUpdateAsync();
     }
 
-    /// <summary>起動時の更新チェック。新バージョンがあれば DL・展開まで済ませ、
-    /// 右クリックメニューの先頭に適用項目を挿入する。</summary>
-    private async Task CheckForUpdateAsync()
+    /// <summary>更新チェック。新バージョンがあれば DL・展開まで済ませ、
+    /// 右クリックメニューの先頭に適用項目を挿入する(自動・手動で共通)。
+    /// manual == true(右クリックメニュー「更新を確認」)のときは、
+    /// 最新版 / 確認失敗もメッセージで通知する(自動チェックは黙殺)。</summary>
+    private async Task CheckForUpdateAsync(bool manual = false)
     {
-        var info = await UpdateChecker.CheckAndDownloadAsync(CancellationToken.None);
-        if (info == null || _stop)
+        var result = await UpdateChecker.CheckAndDownloadAsync(CancellationToken.None);
+        if (_stop)
             return;
+        if (result.Info == null)
+        {
+            if (manual)
+            {
+                try
+                {
+                    _ = Dispatcher.BeginInvoke(() => MessageBox.Show(this,
+                        result.UpToDate
+                            ? $"最新バージョンです (v{UpdateChecker.CurrentVersion})"
+                            : "更新を確認できませんでした。ネットワーク接続を確認してください。",
+                        "SysPulsar 更新確認", MessageBoxButton.OK,
+                        result.UpToDate ? MessageBoxImage.Information : MessageBoxImage.Warning));
+                }
+                catch (InvalidOperationException) { /* 終了中 */ }
+            }
+            return;
+        }
+        var info = result.Info;
+        if (_updateOffered)
+            return; // 既にメニューに出ている(手動で再確認した場合など)
+        _updateOffered = true;
         try
         {
             _ = Dispatcher.BeginInvoke(() =>

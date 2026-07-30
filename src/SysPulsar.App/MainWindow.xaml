@@ -7,5 +7,7 @@
         Background="#141414"
         FontFamily="Yu Gothic UI"
         WindowStartupLocation="Manual">
-    <Grid x:Name="Root"/>
+    <!-- Background 必須: 全表示要素を非表示にしたとき Grid 上の右クリックが
+         ヒットテストをすり抜けてコンテキストメニューが出なくなるのを防ぐ -->
+    <Grid x:Name="Root" Background="#141414"/>
 </Window>
